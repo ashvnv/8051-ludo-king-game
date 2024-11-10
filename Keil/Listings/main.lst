@@ -1,0 +1,1916 @@
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE     1
+
+
+MACRO ASSEMBLER A51 V8.2.7.0
+OBJECT MODULE PLACED IN .\Objects\main.obj
+ASSEMBLER INVOKED BY: D:\Programs\Windows\Install_dir\KeilC51\C51\BIN\A51.EXE main.a51 SET(SMALL) DEBUG PRINT(.\Listings
+                      \main.lst) OBJECT(.\Objects\main.obj) EP
+
+LOC  OBJ            LINE     SOURCE
+
+                       1     ;====================================
+                       2     ;       8051 LUDO KING GAME
+                       3     ;       AUTHOR: ASHWIN VALLABAN
+                       4     ;       https://ashvnv.github.io/ashvnv/
+                       5     ;====================================
+                       6     
+                       7     ;====================================================================================
+                       8     ;       MIT License
+                       9     ;
+                      10     ;       Copyright (c) 2024 Ashwin Vallaban (ashvnv)
+                      11     ;
+                      12     ;       Permission is hereby granted, free of charge, to any person obtaining a copy
+                      13     ;       of this software and associated documentation files (the "Software"), to deal
+                      14     ;       in the Software without restriction, including without limitation the rights
+                      15     ;       to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+                      16     ;       copies of the Software, and to permit persons to whom the Software is
+                      17     ;       furnished to do so, subject to the following conditions:
+                      18     ;
+                      19     ;       The above copyright notice and this permission notice shall be included in all
+                      20     ;       copies or substantial portions of the Software.
+                      21     ;
+                      22     ;       THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+                      23     ;       IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+                      24     ;       FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+                      25     ;       AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+                      26     ;       LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+                      27     ;       OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+                      28     ;       SOFTWARE.
+                      29     ;====================================================================================
+                      30     
+                      31     ;OVERVIEW OF THE PROJECT
+                      32     ;       LUDO KING GAME ON 8051. THERE WILL BE TWO PLAYERS IN THE GAME, RED AND GREEN. GREEN
+                              WILL BE AUTOMATIC AND PLAYER BY
+                      33     ;       8051 ITSELF. THE USER WILL BE THE RED PLAYER. THE ALGORITHM SHOULD DEFINE SOME RULE
+                             S WHILE PLAYING THE GAME.
+                      34     ;       GAME RULES ARE AS FOLLOWS:
+                      35     ;               INITIALLY THE PLAYER WILL GET A WELCOME MESSAGE ON THE LCD.
+                      36     ;               PLAYER THEN HAS TO PRESS THE 'ROLL' BUTTON ON THE MATRIX KEYPAD.
+                      37     ;               WHEN THE BUTTON IS RELEASED, A RAMDON NUMBER BETWEEN 1 TO 6 WILL BE SHOWN O
+                             N THE LCD.
+                      38     ;               INITIALLY THE PLAYER NEEDS TO GET A '6' FOR MAKING THE TOKEN ENTER THE GAME.
+                      39     ;               PLAYER THEN HAS TO SELECT WHICH TOKEN TO MOVE USING THE MATRIX KEYPAD. THE 
+                             TOKEN WILL THEN BE MOVED
+                      40     ;               TO THE NEW LOCATION. NOW IF THIS NEW LOCATION HAS THE OPPOSITE PLAYER'S TOK
+                             EN, THAT TOKEN WILL GO 
+                      41     ;               BACK TO THE HOME LOCATION. THE TOKEN CAN THEN BE REMOVED ONLY IF A '6' IS R
+                             OLLED AGAIN.
+                      42     
+                      43     ;OVERVIEW OF THE ALGORITHM
+                      44     ;       RAM LOCATIONS ARE USED AS A VIRTUAL PATH IN THE GAME. 
+                      45     ;       THERE ARE TOTAL 36 RGBs TO BE CONTROLLED FOR EACH PLAYER
+                      46     ;       RAM LOCATION 0x5C TO 0x7F ARE UTILIZED AS THE VIRTUAL PATH IN THE GAME
+                      47     ;       FROM RED PLAYER PERSPECTIVE, LOCATION SHOULD HAVE DATA 0x01
+                      48     ;       FROM GREEN PLAYER PERSPECTIVE, LOCATION SHOULD HAVE DATA 0x02
+                      49     ;       THE ABOVE ALGO MAY SEEM INEFFICIENT AS A BYTE IS USED FOR REPRESENTING RED AND GREE
+                             N, IT REDUCES THE 
+                      50     ;       SHIFTING COMPLEXITY IN THE PROJECT. IF 5 REGISTERS ARE USED, TOTAL 40 BITS ARE PRES
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE     2
+
+                             ENT AND CAN
+                      51     ;       SUFFICE THE VIRTUAL PATH REQUIRMENT. BUT WHEN A TOKEN IS BEING SHIFTED, IT NEEDS AD
+                             DITIONAL CHECKING IF ANOTHER
+                      52     ;       TOKEN IS PRESENT IN THE SAME BYTE LOCATION WHICH I FEEL WILL COMPLEX EVERYTHING. AN
+                             D USING THIS TECHNIQUE THERE CAN
+                      53     ;       BE ABOUT 7 PLAYERS (THOUGH GAME CAN BE PLAYED BY 4 PLAYER MAX)PLAYING THE GAME 
+                      54     ;       (1 LESS TO MAKE THE RGB BLACK INDICATING NO TOKEN PRESENT).
+                      55     
+                      56     
+                      57     
+                      58     
+                      59     ; ########## PINS DEFINED BELOW ##########
+                      60     
+                      61     ;***************************************
+                      62     ;PINS USED FOR 16X4 LCD DISPLAY
+                      63     ;***************************************
+  00A4                64     RS EQU P2.4
+  00A5                65     EN EQU P2.5
+                      66     ;PORT 1.4 TO 1.7 USED FOR 4 BIT COMMUNICATION WITH 16x4 LCD
+                      67     
+                      68     ;**************************************
+                      69     ;PINS USED FOR 4094
+                      70     ;**************************************
+  00A0                71     DAT EQU P2.0
+  00A1                72     CLK_R EQU P2.1; FOR UPDATING RED PLAYER RGBs
+  00A2                73     CLK_G EQU P2.2; FOR UPDATING GREEN PLAYER RGBs
+  00A3                74     STR EQU P2.3
+                      75     
+                      76     
+                      77     
+                      78     ; ########## REGISTERS USED #############
+                      79     
+                      80     ;R2 IS USED IN WAIT TIMER INTERRUPT
+                      81     
+                      82     ;R7 USED TO STORE TEMP VALUE IN 4094. ALSO USED TO POLL MATRIX KEY
+                      83     ;0x30 USED AS COUNTER IN 4094 SUBROUTINE. IT IS ALSO USED TO POLL THE PORT 0 MATRIX KEYS
+                      84     ;R0 IS USED AT VARIOUS PLACES FOR INDIRECT ADDRESSING
+                      85     
+                      86     ;0x5C TO 0x7F FOR GAME PATH
+                      87     ;0x31 TO 0x38 FOR TOKEN ADDRESSES
+                      88     
+                      89     ;0x20.0 DIE GAVE 6. A TOKEN CAN BE ADDED TO GAME OR ONE OF THE IN GAME TOKEN CAN BE MOVED B
+                             Y 6
+                      90     ;0x20.1 IS SET THEN THE NEW TOKEN POSITION WAS VALID
+                      91     ;0x20.2 INDICATES IF THE WAIT IF OVER OR NOT
+                      92     
+                      93     ;0x20.3; IF SET THEN INDICATES NO TOKENS LEFT AT HOME LOCATION
+                      94     
+                      95     ;0x20.4 INDICATES RESET OCCURRED
+                      96     
+                      97     ;0x39 STORES THE DIE VALUE ROLLED
+                      98     ;0x3A HAS THE NEW ADDRESS WHERE TOKEN WILL BE PLACED
+                      99     ;0x3B USED FOR ANL OPERATION WHILE CLEARING TOKEN
+                     100     ;R5 HAS THE LAST MOVED TOKEN
+                     101     
+                     102     
+                     103     
+0000                 104     ORG 0H
+0000 020100          105             LJMP START
+                     106             
+001B                 107     ORG 001BH
+                     108             ;TIMER 1 OVERFLOW INTERRUPT
+001B DA02            109             DJNZ R2, NOT_YET
+001D D202            110             SETB 0x20.2; SET THE FLAG
+                     111             
+001F                 112             NOT_YET:
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE     3
+
+001F 32              113             RETI
+                     114             
+                     115             
+                     116     ; *********** MAIN PROGRAM ************
+0100                 117     ORG 100H
+0100                 118             START:
+                     119             
+                     120             ;------ LCD INIT ------
+0100 7402            121             MOV A, #0x02; 4 BIT MODE
+0102 120930          122             LCALL LCD_CMD_SEND
+0105 7428            123             MOV A, #0x28; 5x7 CHAR MODE
+0107 120930          124             LCALL LCD_CMD_SEND
+010A 740C            125             MOV A,#0x0C;DISPLAY ON CURSOR OFF
+010C 120930          126             LCALL LCD_CMD_SEND
+010F 7406            127             MOV A,#0x06;AUTO INC CURSOR
+0111 120930          128             LCALL LCD_CMD_SEND
+                     129             
+                     130             ;LCD CURSOR LOCATION
+                     131     ;       #0x80 LINE 1
+                     132     ;       #0xC0 LINE 2
+                     133     ;       #0x90 LINE 3
+                     134     ;       #0xD0 LINE 4
+                     135     
+0114 74D0            136             MOV A, #0xD0;CURSOR LOCATION
+0116 120930          137             LCALL LCD_CMD_SEND
+0119 744C            138             MOV A, #0x4C; L
+011B 120950          139             LCALL LCD_DATA_SEND
+011E 7455            140             MOV A, #0x55; U
+0120 120950          141             LCALL LCD_DATA_SEND
+0123 7444            142             MOV A, #0x44; D
+0125 120950          143             LCALL LCD_DATA_SEND
+0128 744F            144             MOV A, #0x4F; O
+012A 120950          145             LCALL LCD_DATA_SEND
+012D 7420            146             MOV A, #0x20; SP
+012F 120950          147             LCALL LCD_DATA_SEND
+0132 744B            148             MOV A, #0x4B; K
+0134 120950          149             LCALL LCD_DATA_SEND
+0137 7449            150             MOV A, #0x49; I
+0139 120950          151             LCALL LCD_DATA_SEND
+013C 744E            152             MOV A, #0x4E; N
+013E 120950          153             LCALL LCD_DATA_SEND
+0141 7447            154             MOV A, #0x47; G
+0143 120950          155             LCALL LCD_DATA_SEND
+                     156     
+                     157     
+                     158             ; --------- INIT DIE TIMER AND WAIT TIMER -------
+                     159             ;USING TIMER 0 AUTO RELOAD (1 TO 6 VALUE) FOR DIE TIMER
+0146 758912          160             MOV TMOD, #0x12; TIMER 0 AUTORELOAD MODE AND TIMER 1 16 BIT MODE
+0149 758CFA          161             MOV TH0, #0xFA; INIT FROM F9. TL0 WILL OVERFLOW TO FA
+014C 758AFA          162             MOV TL0, #0xFA;
+014F D28C            163             SETB TR0; RUN THIS TIMER FOREVER
+                     164             
+                     165             
+                     166             ;---- INTERRUPT FOR TIMER 1 ---
+0151 D2AF            167             SETB EA;
+0153 D2AB            168             SETB ET1;
+                     169             
+                     170             
+                     171             ;SHOW WELCOME ON LCD
+0155 120570          172             LCALL WC_LCD_MSG
+0158 7A12            173             MOV R2, #18;INIT COUNTER
+015A 1204F0          174             LCALL TIMER1_WAIT
+                     175             
+                     176             ;SHOW ROLL
+015D 7480            177             MOV A, #0x80;CURSOR LOCATION
+015F 120930          178             LCALL LCD_CMD_SEND
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE     4
+
+0162 7452            179             MOV A, #0x52; R
+0164 120950          180             LCALL LCD_DATA_SEND
+0167 744F            181             MOV A, #0x4F; O
+0169 120950          182             LCALL LCD_DATA_SEND
+016C 744C            183             MOV A, #0x4C; L
+016E 120950          184             LCALL LCD_DATA_SEND
+0171 744C            185             MOV A, #0x4C; L
+0173 120950          186             LCALL LCD_DATA_SEND
+0176 7420            187             MOV A, #0x20; SP
+0178 120950          188             LCALL LCD_DATA_SEND
+                     189             
+                     190     
+                     191             ;------ INIT FROM HERE ------
+                     192             ;RESET ROUTES THE PROGRAM HERE
+017B                 193             RESET_GAME:
+017B 75800F          194             MOV P0, #0x0F; INIT THE MATRIX KEYBOARD
+                     195     
+                     196             ;INIT ALL THE GAME REGISTERS HERE
+                     197             ;FIRST CLEAR ALL THE REGISTERS FROM 0x5C TO 0x7F. IMP TO DO THIS AFTER THE GAME IS 
+                             RESET
+017E 785C            198             MOV R0, #0x5C
+0180                 199             REPEAT_PATH_CLR:
+0180 7600            200             MOV @R0, #0x00
+0182 08              201             INC R0
+0183 B880FA          202             CJNE R0, #0x80, REPEAT_PATH_CLR
+                     203             ;CLEAR COMPLETE
+                     204             
+                     205             ;FOR TRACKING THE TOKEN LOCATION.
+                     206             ;FOR RED: TOKEN 1: 0x31
+                     207             ;                 TOKEN 2: 0x32
+                     208             ;                 TOKEN 3: 0x33
+                     209             ;                 TOKEN 4: 0x34 
+                     210             ;FOR GREEN: TOKEN 1: 0x35
+                     211             ;                       TOKEN 2: 0x36
+                     212             ;                       TOKEN 3: 0x37
+                     213             ;                       TOKEN 4: 0x38
+                     214             ;RESET ALL THE TOKEN REGISTER TO HOME LOCATION (HOME ADDRESS IS 0x00)
+0186 7831            215             MOV R0, #0x31
+0188                 216             REPEAT_TOKEN_CLR:
+0188 7600            217             MOV @R0, #0x00
+018A 08              218             INC R0
+018B B839FA          219             CJNE R0, #0x39, REPEAT_TOKEN_CLR
+                     220             ;CLEAR COMPLETE
+                     221             
+                     222     ;       ;--------- TEST----------
+                     223     ;;      ;FORCE TOKEN ON ANY LINE
+                     224     ;       MOV 0x7C, #0x02
+                     225     ;       MOV 0x35, #0x7C
+                     226     ;;      
+                     227     ;       MOV 0x7D, #0x02
+                     228     ;       MOV 0x36, #0x7D
+                     229     ;;      
+                     230     ;       MOV 0x7A, #0x02
+                     231     ;       MOV 0x37, #0x7A
+                     232     
+                     233     ;       MOV 0x7F, #0x02
+                     234     ;       MOV 0x38, #0x7F
+                     235     
+                     236     ;COMPUTER ALGORITHM TOKEN DOWN CHECK
+                     237     ;       MOV 0x5E, #0x02
+                     238     ;       MOV 0x35, #0x5E
+                     239     
+                     240     ;       MOV 0x5C, #0x02
+                     241     ;       MOV 0x36, #0x5C
+                     242     ;       
+                     243     ;       MOV 0x6C, #0x01
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE     5
+
+                     244     ;       MOV 0x31, #0x6C
+                     245     
+                     246     
+                     247     ;;      ;------------------------
+                     248     
+                     249             ;UPDATE THE RGBs
+018E 1209A0          250             LCALL UPDATE_RED_RGB
+0191 1209F9          251             LCALL UPDATE_GREEN_RGB
+                     252             ;----- INIT COMPLETE ------
+                     253             
+                     254             
+                     255     
+                     256             
+                     257             ;----------- START THE GAME FROM HERE ----------
+                     258             ;LET THE PLAYER ROLL THE DIE FIRST. IF THE PLAYER SCORES A '6' THEN ONE OF THE TOKE
+                             N CAN BE TAKEN OUT.
+                     259             ;NEXT 8051 WILL PLAY. IF IT SCORES '6' THEN IT WILL CHOOSE THE TOKENS IN SEQUENCE A
+                             ND PLAY
+                     260             ;TODO 8051 TOKEN LOGIC
+                     261             
+                     262             ;IMPORTANT RULE FUNCTIONS IN THE GAME
+                     263             ;       0. DIE ROLL AND TOKEN SELECT FUNCTION
+                     264             ;       1. ADDING THE TOKEN TO THE GAME
+                     265             ;       2. REMOVING THE TOKEN FROM THE GAME
+                     266             ;       3. PLACING THE TOKEN
+                     267             ;               ;THIS FUNCTION WILL HAVE ADDITIONAL SUB FUNCTIONS
+                     268             ;               1. VERIFY WHERE THE TOKEN IS CURRENTLY, AT HOME OR GAME
+                     269             ;                       IF AT HOME THEN CHECK IF DIE ROLL WAS '6', ELSE SKIP THE TO
+                             KEN
+                     270             ;                       IF NO OTHER TOKEN IN THE GAME, THEN NEXT PLAYER WILL PLAY
+                     271             ;               2. VERIFY IF THE TOKEN CAN MOVE TO THE NEW LOCATION. IF ANY OTHER T
+                             OKEN PRESENT THEN MOVE THAT TOKEN BACK TO HOME
+                     272             ;                       IF THE TOKEN IS AT PARKING REGISTER 7F, THEN SEE IF THE DIE
+                              ROLL IS PROPER TO PARK THE TOKEN
+                     273             
+                     274             
+                     275             ; GAME STARTS HERE
+                     276             
+                     277             ;-------------- PLAYER ---------------
+0194                 278             REPEAT_DIE_PLAYER:
+0194 120890          279             LCALL PLAYER_LCD
+0197 120800          280             LCALL PLAYER_DIE;
+                     281             
+                     282             ;CHECK IF RESET CLICKED
+019A 300403          283             JNB 0x20.4, NOT_RESET
+                     284             ;RESET CLICKED. GO TO RESET ROUTINE
+019D 0203E2          285             LJMP FORCE_RESET
+                     286             
+01A0                 287             NOT_RESET:
+                     288             ;IF 0x39 HAS 6, THEN SET 0x20.0. IN TOKEN SELECT, IF TOKEN IN HOME IT CAN BE ADDED 
+                             TO THE GAME
+01A0 E539            289             MOV A, 0x39
+01A2 B40602          290             CJNE A, #0x06, NOT_PREV_PLAYER
+01A5 D200            291             SETB 0x20.0; 6 WAS SCORED
+                     292             
+01A7                 293             NOT_PREV_PLAYER:
+                     294             ;HERE WE ALSO NEED TO CHECK IF THE PLAYER HAS ANY VALID MOVES.
+                     295             ;IF 6 WAS SCORED THEN SKIP THIS CHECK.
+                     296             ;VALIDITY CHECK IF AS FOLLOWS:
+                     297             ;       FIRST CHECK IF ANY TOKEN IS IN THE GAME, IF NOT THEN INVALID
+                     298             ;       CHECK IF THE TOKENS ARE MOVED DIE VALUE POSITIONS, IS IT WITHIN THE VIRTUAL
+                              PATH BOUND (7F)
+                     299             ;---------------- VALIDITY STARTS HERE --------------------
+01A7 7830            300             MOV R0, #0x30
+01A9 7E01            301             MOV R6, #0x01; PLAYER TOKEN MASK
+                     302             
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE     6
+
+01AB 120700          303             LCALL VALIDITY_CHECK
+                     304             ;IF 0x20.3 IS SET THEN VALID. ELSE INVALID
+01AE 200303          305             JB 0x20.3, REPEAT_TOKEN_SELECT_PLAYER; VALID GO TO NEXT STEP
+01B1 0201FE          306             LJMP PLAYER_MOVES_DONE; INVALID
+                     307             
+                     308     ;       VALIDITY_CHECK1_CONT:
+                     309     ;       CJNE R0, #0x34, CONT_VALIDITY_CHECK1
+                     310     ;       ;NO VALID MOVES LEFT WITH PLAYER. LET COMPUTER PLAY
+                     311     ;       
+                     312     ;       LCALL INVALID_LCD_MSG
+                     313     ;       MOV R2, #18;INIT COUNTER
+                     314     ;       LCALL TIMER1_WAIT
+                     315     ;       
+                     316     ;       LJMP PLAYER_MOVES_DONE
+                     317     ;       
+                     318     ;       CONT_VALIDITY_CHECK1:
+                     319     ;       INC R0
+                     320     ;       MOV A, @R0
+                     321     ;       JNZ FOUND_TOKEN_OUTSIDE_HOME
+                     322     ;       
+                     323     ;       ;INDICATES 6 WAS SCORED, A TOKEN IS AVAILABLE AT THE HOME POSITION
+                     324     ;       JB 0x20.0, REPEAT_TOKEN_SELECT_PLAYER; SKIP THIS STEP IF '6' WAS SCORED
+                     325     ;       SJMP VALIDITY_CHECK1_CONT
+                     326     ;       
+                     327     ;       FOUND_TOKEN_OUTSIDE_HOME:
+                     328     ;       ;VALID TOKEN POSITION FOUND. NOW CHECK IF TOKENS HAVE VALID END ADDRESS
+                     329     ;       ADD A, 0x39; ADD CURRENT DIE VAL TO VALID TOKEN
+                     330     ;       CLR C; CLEAR CARRY
+                     331     ;       SUBB A, #0x80
+                     332     ;       ;IF CARRY GENERATED, THEN INVALID MOVE
+                     333     ;       JNC VALIDITY_CHECK1_CONT; GO BACK
+                     334     ;       ;CARRY SO VALID TOKEN FOUND
+                     335     ;       
+                     336     ;       ;CHECK IF THAT LOCATION HAS SAME PLAYER TOKEN
+                     337     ;       MOV A, @R0
+                     338     ;       ADD A, 0x39
+                     339     ;       MOV R1, A
+                     340     ;       MOV A, @R1
+                     341     ;       ANL A, #0x01
+                     342     ;       CJNE A, #0x01, REPEAT_TOKEN_SELECT_PLAYER; IF END ADDRESS DOES NOT HAVE THE RED PAT
+                             TERN THIS IT IS VALID
+                     343     ;       SJMP VALIDITY_CHECK1_CONT; REPEAT CHECK
+                     344             ;-----------------------------------------------------------
+                     345     
+                     346             
+                     347             ;HERE CHECK WHICH TOKEN IS SELECTED.
+01B4                 348             REPEAT_TOKEN_SELECT_PLAYER:
+01B4 120600          349             LCALL TOKEN_SELECT
+                     350             ;R0 HAS THE TOKEN ADDRESS WHICH WAS SELECTED
+                     351             
+                     352             ;NOW CHECK IF THE TOKEN IS AT HOME OR IN THE GAME.
+01B7 E6              353             MOV A, @R0
+01B8 7022            354             JNZ NOT_AT_HOME_PLAYER
+                     355             ;PLAYER AT HOME
+                     356             ;VERIFY IF 0x20.0 FLAG IS SET. IF YES THEN ADD THE TOKEN TO THE GAME. ELSE GO BACK 
+                             TO TOKEN_SELECT
+                     357             ;JNB 0x20.0, REPEAT_TOKEN_SELECT_PLAYER; NOT SCORED '6' SO CANNOT ADD TO THE GAME
+01BA 20000B          358             JB 0x20.0, ADD_TOKEN_TO_PATH_TRUE
+                     359             
+                     360             ;SHOW MOVE NA MESSGAE ON LCD
+01BD 1205D0          361             LCALL NA_LCD_MSG
+01C0 7A12            362             MOV R2, #18;INIT COUNTER
+01C2 1204F0          363             LCALL TIMER1_WAIT
+                     364             ;GO BACK AND REPEAT AGAIN
+01C5 0201B4          365             LJMP REPEAT_TOKEN_SELECT_PLAYER
+                     366             
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE     7
+
+                     367             
+01C8                 368             ADD_TOKEN_TO_PATH_TRUE:
+                     369             ;CALL THE TOKEN PLACE SUBROUTINE. IT UNDERGOES SOME CONDITIONS AND TELLS IF THE TOK
+                             EN CAN BE ADDED TO NEW POSITION OR NOT
+                     370             ;R0 HAS THE TOKEN ADDRESS AND 0x3A WILL HAVE THE NEW TOKEN ADDRESS
+01C8 753A5C          371             MOV 0x3A, #0x5C; INIT START LOCATION FOR PLAYER
+                     372             
+01CB 12063C          373             LCALL TOKEN_PLACE_PLAYER
+01CE 3001E3          374             JNB 0x20.1, REPEAT_TOKEN_SELECT_PLAYER;
+                     375             ;UPDATE THE TOKEN ADDRESS AND ADD THE TOKEN TO NEW LOCATION
+01D1 E55C            376             MOV A, 0x5C
+01D3 4401            377             ORL A, #0x01; ADD PLAYER TOKEN
+01D5 F55C            378             MOV 0x5C, A
+01D7 765C            379             MOV @R0, #0x5C; NEW ADDRESS OF THE TOKEN SELECTED
+                     380             
+01D9 0201FE          381             LJMP PLAYER_MOVES_DONE
+                     382             
+                     383             
+01DC                 384             NOT_AT_HOME_PLAYER:
+                     385             ;PLAYER IS NOT AT HOME
+                     386             ;HERE CHECK IF THE TOKEN CAN BE MOVED TO THE NEW LOCATION.
+                     387             ;0x39 HAS THE DIE VALUE
+                     388             ;0x3A HAS THE NEW TOKEN ADDRESS
+01DC E6              389             MOV A, @R0
+01DD 2539            390             ADD A, 0x39; ADD NEW DIE VALUE
+01DF F53A            391             MOV 0x3A, A; NEW ADDRESS STORED IN 0x3A
+                     392             
+01E1 12063C          393             LCALL TOKEN_PLACE_PLAYER
+01E4 3001CD          394             JNB 0x20.1, REPEAT_TOKEN_SELECT_PLAYER;
+                     395             ;CLEAR THE CURRENT LOCATION TOKEN
+01E7 E6              396             MOV A, @R0
+01E8 F9              397             MOV R1, A
+01E9 873B            398             MOV 0x3B, @R1
+01EB 533BFE          399             ANL 0x3B, #0xFE; REMOVE THE PLAYER TOKEN (0x01)
+01EE A73B            400             MOV @R1, 0x3B
+                     401             
+                     402             ;UPDATE THE TOKEN ADDRESS AND ADD THE TOKEN TO NEW LOCATION
+01F0 A63A            403             MOV @R0, 0x3A
+01F2 A93A            404             MOV R1, 0x3A
+01F4 873B            405             MOV 0x3B, @R1
+01F6 433B01          406             ORL 0x3B, #0x01
+01F9 A73B            407             MOV @R1, 0x3B; ADD TOKEN TO NEW LOCATION
+01FB 0201FE          408             LJMP PLAYER_MOVES_DONE
+                     409                     
+                     410                     
+01FE                 411             PLAYER_MOVES_DONE:
+01FE 1209A0          412             LCALL UPDATE_RED_RGB
+0201 1209F9          413             LCALL UPDATE_GREEN_RGB
+                     414             ;CHECK HERE IS 0x20.0 WAS SET. IF YES THEN REPEAT PLAYER'S CHANCE.
+                     415             
+                     416     ;       ;TEST
+                     417     ;       CLR 0x20.0;LET COMPUTER PLAY NEXT
+                     418             
+                     419             ;----- CHECK IF PLAYER WON ------
+0204 120450          420             LCALL CHECK_PLAYER_WON
+0207 B40409          421             CJNE A, #0x04, PLAYER_NOT_WON
+                     422             ;PLAYER WON. SHOW WON ON THE DISPLAY AND STOP STILL RESET
+020A 120540          423             LCALL CLEAR_LCD_MSG
+020D 12048A          424             LCALL WON_LCD_MSG
+0210 0203DF          425             LJMP WAIT_FOR_RESET; GAME OVER. WAIT FOR RESET
+                     426             
+                     427             
+0213                 428             PLAYER_NOT_WON:
+                     429             
+                     430             
+0213 300005          431             JNB 0x20.0, COMPUTER_PLAY_NEXT
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE     8
+
+0216 C200            432             CLR 0x20.0; CLEAR THE FLAG
+0218 020194          433             LJMP REPEAT_DIE_PLAYER
+                     434             
+                     435             
+021B                 436             COMPUTER_PLAY_NEXT:
+                     437             ;HERE 8051 WILL MAKE THE MOVE
+                     438             ;NOW THIS STEP IS TRICKY. COMPUTER ALGORITHM WILL WORK AS FOLLOWS:
+                     439             ;       FIRST LET IT ROLL THE DIE AFTER SOME DELAY
+                     440             ;       NOW SEE IF THE ROLLED DIE VALUE GIVES A VALID MOVE.
+                     441             ;       IF YES THEN CHECK WHICH TOKEN CAN BE MOVED. IF A 6 WAS SCORED TAKE THE TOKE
+                             N OUT.
+                     442             ;       IF ONE OF THE PLAYER TOKEN CAN BE MOVED BACK HOME, DO IT INSTEAD.
+                     443             ;       SO THE SUMMARY OF THE ALGORITHM IS AS FOLLOWS:
+                     444             ;               1. ROLL THE DIE
+                     445             ;               2. IF 6 THEN PREVILIGED, NOW SEE IF ANO TOKEN OUT IN THE GAME. IF Y
+                             ES THEN SEE IF THE ROLL
+                     446             ;                               CAN MAKE A PLAYER TOKEN GO BACK HOME. IF YES THEN D
+                             O IT. IF ANY NO PREVIOUSLY THEN
+                     447             ;                               TAKE A TOKEN OUT AND REPEAT.
+                     448             ;                  IF OTHER THAN 6 SCORED THEN CHECK IF ANY ROLL CAN MAKE THE PLAYE
+                             R GO BACK HOME.
+                     449             ;                      IF YES THEN MOVE THAT TOKEN
+                     450             ;                  IF NO THEN SIMPLE MOVE THE TOKEN WHICH WAS NOT MOVED BEFORE. BET
+                             TER TO HAVE A REGISTER
+                     451             ;                        STATING WHICH TOKEN WAS MOVED LAST
+                     452             
+021B 1208C0          453             LCALL COMPUTER_LCD
+                     454             
+                     455             ;FIRST ROLL THE DIE
+021E 120750          456             LCALL COMPUTER_DIE
+                     457             ;IF 0x39 HAS 6, THEN SET 0x20.0. IN TOKEN SELECT, IF TOKEN IN HOME IT CAN BE ADDED 
+                             TO THE GAME
+0221 E539            458             MOV A, 0x39
+0223 B40602          459             CJNE A, #0x06, NOT_PREV_COMPUTER
+0226 D200            460             SETB 0x20.0; 6 WAS SCORED
+                     461             
+0228                 462             NOT_PREV_COMPUTER:
+                     463             
+                     464             ;---------------- VALIDITY STARTS HERE --------------------
+0228 7834            465             MOV R0, #0x34; COMPUTER TOKEN ADD - 1
+022A 7E02            466             MOV R6, #0x02; COMPUTER TOKEN MASK
+                     467             
+022C 120700          468             LCALL VALIDITY_CHECK
+                     469             ;IF 0x20.3 IS SET THEN VALID. ELSE INVALID
+022F 200303          470             JB 0x20.3, TOKEN_SELECT_COMPUTER; VALID GO TO NEXT STEP
+0232 0203B1          471             LJMP COMPUTER_MOVES_DONE; INVALID
+                     472             
+                     473             
+0235                 474             TOKEN_SELECT_COMPUTER:
+                     475             
+                     476     ;       ;FOR TESTING
+                     477     ;       WAIT_FOR_MATRIX: JB P0.0, WAIT_FOR_MATRIX
+                     478             
+                     479             
+                     480             ;NOW SEE WHICH TOKEN TO MOVE. THE TRICKY PART STARTS FROM HERE
+                     481             ;INIT THE TOKEN CHECKER HERE
+                     482             ;SEE IF THE TOKEN IS IN THE GAME OR NOT
+                     483             ;0x39 HAS THE DIE ROLL VALUE
+0235 7934            484             MOV R1, #0x34;INIT THE TOKEN COUNTER
+                     485             
+0237                 486             TOKEN_COUNTER_NXT:
+0237 B93841          487             CJNE R1, #0x38, KEEP_CHECKING_TOKEN_COMP
+                     488             ;NO TOKEN WHICH CAN REMOVE PLAYER TOKEN FOUND IN THE GAME
+                     489             
+                     490             ;=====================================================================
+                     491             ;NOW CHECK IF '6' WAS SCORED. IF YES THEN ADD A NEW TOKEN
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE     9
+
+023A 200003          492             JB 0x20.0, ADD_A_COMP_TOKEN
+023D 0202D5          493             LJMP TOKEN_MOVE_COMP;MOVE AN EXISTING TOKEN IN THE GAME
+                     494             
+0240                 495             ADD_A_COMP_TOKEN:
+                     496             ;HERE WE WRITE A LOGIC FOR ADDING A TOKEN TO THE GAME.
+                     497             ;IF NO TOKEN AVAILABLE AT HOME THEN JUMP TO TOKEN_MOVE_COMP
+0240 7934            498             MOV R1, #0x34
+                     499             
+0242                 500             CHECK_NEXT_COMP_TOKEN_ADDING:
+0242 B93803          501             CJNE R1, #0x38, CHECK_COMP_TOKEN_AT_HOME
+0245 0202D5          502             LJMP TOKEN_MOVE_COMP; NO TOKEN AT HOME. MOVE THE EXISTING TOKEN. GOES TO TOKEN_MOVE
+                             _COMP
+                     503             
+0248                 504             CHECK_COMP_TOKEN_AT_HOME:
+0248 09              505             INC R1
+0249 E7              506             MOV A, @R1
+024A 70F6            507             JNZ CHECK_NEXT_COMP_TOKEN_ADDING
+                     508             
+                     509             ;A TOKEN FOUND AT HOME LOCATION
+                     510             ;R1 HAS THE TOKEN ADDRESS
+                     511             ;CHECK IF COMP TOKEN IS AT 0x5C LOCATION. IF YES THEN SKIP THIS STEP AND MOVE THE T
+                             OKEN AT 0x5C
+024C E55C            512             MOV A, 0x5C
+024E 5402            513             ANL A, #0x02
+0250 B40203          514             CJNE A, #0x02, COMP_TOKEN_NOT_AT_START
+0253 0202D5          515             LJMP TOKEN_MOVE_COMP; MOVE TOKEN INSTEAD
+                     516             
+                     517             
+0256                 518             COMP_TOKEN_NOT_AT_START:
+                     519             ;CHECK IF PLAYER TOKEN PRESENT AT 0x5C. IF YES THEN REMOVE IT AND ADD COMP TOKEN
+0256 786C            520             MOV R0, #0x6C; PLAYER MERGE PATH
+0258 E6              521             MOV A, @R0
+0259 5401            522             ANL A, #0x01;PLAYER MASK
+025B B40112          523             CJNE A, #0x01, ADD_WITHOUT_REMOVE_PLAYER
+                     524             ;PLAYER TOKEN FOUND REMOVE IT
+025E 7830            525             MOV R0, #0x30;INIT PLAYER TOKEN FINDER
+                     526     
+0260                 527             NOT_FOUND_PLAYER_TO_RM:
+0260 08              528             INC R0
+0261 E6              529             MOV A, @R0
+0262 B46CFB          530             CJNE A, #0x6C, NOT_FOUND_PLAYER_TO_RM
+                     531             ;FOUND THE PLAYER TOKEN. STORED IN R0
+                     532             
+0265 7600            533             MOV @R0, #0x00; RESET PLAYER TOKEN
+0267 856C3B          534             MOV 0x3B, 0x6C
+026A 533BFE          535             ANL 0x3B, #0xFE; REMOVE THE PLAYER TOKEN
+026D 853B6C          536             MOV 0x6C, 0x3B; CLEAR TOKEN RAM FOR PLAYER
+                     537             
+0270                 538             ADD_WITHOUT_REMOVE_PLAYER:
+0270 775C            539             MOV @R1, #0x5C
+0272 E55C            540             MOV A, 0x5C
+0274 4402            541             ORL A, #0x02; ADD COMPUTER TOKEN
+0276 F55C            542             MOV 0x5C, A
+                     543             ;DONE ADDING
+                     544             
+0278 0203B1          545             LJMP COMPUTER_MOVES_DONE
+                     546             ;=========================================================================
+                     547             
+                     548             
+027B                 549             KEEP_CHECKING_TOKEN_COMP:
+027B 09              550             INC R1
+027C E7              551             MOV A, @R1; GET THE TOKEN ADDRESS
+027D 60B8            552             JZ TOKEN_COUNTER_NXT
+                     553             ;FOUND A TOKEN IN THE GAME
+027F 2539            554             ADD A, 0x39; NEW ADDRESS OF THE TOKEN
+                     555             
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE    10
+
+                     556             ;VERIFY IF THE TOKEN ADDRESS IS LESS THAN 0x7F
+0281 C3              557             CLR C; CLEAR CARRY
+0282 9480            558             SUBB A, #0x80
+                     559             ;IF CARRY GENERATED, THEN VALID MOVE
+0284 50B1            560             JNC TOKEN_COUNTER_NXT; INVALID MOVE. CHECK NEXT
+                     561             
+                     562             ;CHECK IF THE END LOCATION IS BELOW 0xFC. THIS IS BECAUSE LOCATION FROM 0x7C TO 0x7
+                             F, PLAYER CANNOT ENTER
+0286 E7              563             MOV A, @R1
+0287 2539            564             ADD A, 0x39
+0289 C3              565             CLR C
+028A 947C            566             SUBB A, #0x7C
+                     567             ;IF CARRY GENERATED THEN INVALID. ELSE INVALID
+028C 50A9            568             JNC TOKEN_COUNTER_NXT;
+                     569             
+                     570             ;CARRY GENERATED. NOW CHECK IF IT CAN REMOVE PLAYER TOKEN
+                     571             
+                     572             ;========= CHECK IF IT CAN TAKE DOWN PLAYER TOKEN ========
+                     573             ;CHECK IF NEW LOCATION HAS PLAYER TOKEN.
+028E 8907            574             MOV 0x07, R1; BACKUP R7
+                     575             
+0290 E7              576             MOV A, @R1
+0291 2539            577             ADD A, 0x39
+0293 F9              578             MOV R1, A; NEW ADDRESS OF THE COMPUTER TOKEN
+                     579             
+0294 E9              580             MOV A, R1; CALCULATE THE OFFSET LOCATION FIRST
+0295 C3              581             CLR C; CLEAR CARRY
+0296 946C            582             SUBB A, #0x6C
+                     583             ;IF CARRY GENERATED, THEN INC BY 0x10
+0298 4007            584             JC PLAY_TOKEN_INC_F
+                     585             ;PLAYER TOKEN DEC BY F
+029A E9              586             MOV A, R1
+029B C3              587             CLR C
+029C 9410            588             SUBB A, #0x10
+029E F9              589             MOV R1, A
+029F 8004            590             SJMP COMP_TOKEN_GET_STEP_DONE
+                     591             
+02A1                 592             PLAY_TOKEN_INC_F:
+02A1 E9              593             MOV A, R1
+02A2 2410            594             ADD A, #0x10
+02A4 F9              595             MOV R1, A
+                     596             
+02A5                 597             COMP_TOKEN_GET_STEP_DONE:
+02A5 E7              598             MOV A, @R1; GET PLAYER MERGE PATH
+                     599             
+02A6 5401            600             ANL A, #0x01; MASK
+02A8 B40125          601             CJNE A, #0x01, NO_PLAYER_TOKEN
+                     602             ;PLAYER TOKEN FOUND AND STORED IN R1
+                     603             ;NOW REMOVE THE PLAYER TOKEN AND GO TO COMPUTER_MOVES_DONE
+02AB 7830            604             MOV R0, #0x30
+                     605             
+02AD                 606             CHECK_NEXT_PLAY_TOKEN:
+02AD 08              607             INC R0
+02AE E6              608             MOV A, @R0
+02AF B501FB          609             CJNE A, 0x01, CHECK_NEXT_PLAY_TOKEN
+                     610             ;FOUND TOKEN. STORED IN R0
+02B2 7600            611             MOV @R0, #0x00; RESET TOKEN ADDRESS
+02B4 873B            612             MOV 0x3B, @R1
+02B6 533BFE          613             ANL 0x3B, #0xFE; REMOVE THE PLAYER TOKEN
+02B9 A73B            614             MOV @R1, 0x3B
+                     615             
+                     616             ;UPDATE COMPUTER TOKEN
+                     617             ;R7 HAS THE TOKEN ADDRESS OF COMPUTER WHICH REMOVED PLAYER TOKEN
+                     618             ;FIRST CLEAR THE COMPUTER TOKEN FROM INITIAL LOCATION
+02BB A907            619             MOV R1, 0x07
+                     620             
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE    11
+
+02BD 8700            621             MOV 0x00, @R1; INIT A NEW POINTER
+02BF E6              622             MOV A, @R0
+02C0 54FD            623             ANL A, #0xFD; CLEAR CURRENT COMPUTER LOCATION REGISTER
+02C2 F6              624             MOV @R0, A
+                     625             
+02C3 E7              626             MOV A, @R1
+02C4 2539            627             ADD A, 0x39; ADD DIE VALUE
+02C6 F7              628             MOV @R1, A; UPDATE COMPUTER TOKEN
+                     629             
+02C7 8700            630             MOV 0x00, @R1
+02C9 E6              631             MOV A, @R0
+02CA 4402            632             ORL A, #0x02; ADD COMPUTER TOKEN
+02CC F6              633             MOV @R0, A
+                     634             
+02CD 0203B1          635             LJMP COMPUTER_MOVES_DONE
+                     636             
+                     637             
+02D0                 638             NO_PLAYER_TOKEN:
+                     639             ;NO PLAYER TOKEN FOUND. SO SKIP AND GO TO NEXT TOKEN
+02D0 A907            640             MOV R1, 0x07;; RESTORE R1
+02D2 020237          641             LJMP TOKEN_COUNTER_NXT
+                     642             
+                     643             
+02D5                 644             TOKEN_MOVE_COMP:
+                     645             ;HERE AN EXISTING TOKEN IS MOVED.
+                     646             ;NOW CHECK WHICH TOKEN TO MOVE. R5 STORES THE LAST MOVED TOKEN. IT IS BETWEEN 0 TO 3
+                     647             
+02D5 BD0034          648             CJNE R5, #0x00, CHECK_NEXT_COMP_MOVE
+                     649             ;0x35 TOKEN WAS MOVED
+                     650             ;MOVE 0x36
+02D8 7D01            651             MOV R5, #0x01; OVERWRITE
+                     652     
+                     653     ;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+02DA E536            654             MOV A, 0x36
+02DC 602E            655             JZ CHECK_NEXT_COMP_MOVE; CANNOT MOVE 0x36, TOKEN AT HOME
+                     656             
+02DE 7836            657             MOV R0, #0x36
+02E0 E6              658             MOV A, @R0
+02E1 2539            659             ADD A, 0x39; ADD DIE VALUE
+02E3 C3              660             CLR C
+02E4 9480            661             SUBB A, #0x80
+                     662             
+02E6 5024            663             JNC CHECK_NEXT_COMP_MOVE; GOING BEYOND THE BOUND
+                     664             ;CARRY. VALID. MOVE 0x36 TOKEN
+                     665     
+                     666             ;CHECK IF THE END ADDRESS HAS COMPUTER PATTERN OR NOT
+02E8 7936            667             MOV R1, #0x36
+02EA E7              668             MOV A, @R1
+02EB 2539            669             ADD A, 0x39
+02ED F9              670             MOV R1, A
+02EE E7              671             MOV A, @R1
+02EF 5402            672             ANL A, #0x02
+02F1 B40202          673             CJNE A, #0x02, NO_COMP_PATTERN_FOUND
+                     674             ;COMP PATTERN FOUND. SKIP THIS STEP
+02F4 8016            675             SJMP CHECK_NEXT_COMP_MOVE
+                     676     
+02F6                 677             NO_COMP_PATTERN_FOUND:
+                     678             ;CLEAR CURRENT LOCATION
+02F6 8601            679             MOV 0x01, @R0
+                     680             ;CHANGED TOKEN POSITION
+02F8 E6              681             MOV A, @R0
+02F9 2539            682             ADD A, 0x39
+02FB F6              683             MOV @R0, A
+02FC 873B            684             MOV 0x3B, @R1
+02FE 533BFD          685             ANL 0x3B, #0xFD; REMOVE THE COMPUTER TOKEN
+0301 A73B            686             MOV @R1, 0x3B
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE    12
+
+                     687             
+0303 8601            688             MOV 0x01, @R0
+0305 E7              689             MOV A, @R1
+0306 4402            690             ORL A, #0x02; ADD COMPUTER
+0308 F7              691             MOV @R1, A
+0309 0203B1          692             LJMP COMPUTER_MOVES_DONE
+                     693     ;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+                     694             
+                     695             
+030C                 696             CHECK_NEXT_COMP_MOVE:
+030C BD0134          697             CJNE R5, #0x01,CHECK_NEXT_COMP_MOVE1
+                     698             ;0x36 TOKEN WAS MOVED
+                     699             ;MOVE 0x37
+030F 7D02            700             MOV R5, #0x02; OVERWRITE
+                     701             
+                     702             
+                     703     ;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+0311 E537            704             MOV A, 0x37
+0313 602E            705             JZ CHECK_NEXT_COMP_MOVE1; CANNOT MOVE 0x36, TOKEN AT HOME
+                     706             
+0315 7837            707             MOV R0, #0x37
+0317 E6              708             MOV A, @R0
+0318 2539            709             ADD A, 0x39; ADD DIE VALUE
+031A C3              710             CLR C
+031B 9480            711             SUBB A, #0x80
+                     712             
+031D 5024            713             JNC CHECK_NEXT_COMP_MOVE1; GOING BEYOND THE BOUND
+                     714             ;CARRY. VALID. MOVE 0x36 TOKEN
+                     715     
+                     716             ;CHECK IF THE END ADDRESS HAS COMPUTER PATTERN OR NOT
+031F 7937            717             MOV R1, #0x37
+0321 E7              718             MOV A, @R1
+0322 2539            719             ADD A, 0x39
+0324 F9              720             MOV R1, A
+0325 E7              721             MOV A, @R1
+0326 5402            722             ANL A, #0x02
+0328 B40202          723             CJNE A, #0x02, NO_COMP_PATTERN_FOUND1
+                     724             ;COMP PATTERN FOUND. SKIP THIS STEP
+032B 8016            725             SJMP CHECK_NEXT_COMP_MOVE1
+                     726     
+032D                 727             NO_COMP_PATTERN_FOUND1:
+                     728             ;CLEAR CURRENT LOCATION
+032D 8601            729             MOV 0x01, @R0
+                     730             ;CHANGED TOKEN POSITION
+032F E6              731             MOV A, @R0
+0330 2539            732             ADD A, 0x39
+0332 F6              733             MOV @R0, A
+0333 873B            734             MOV 0x3B, @R1
+0335 533BFD          735             ANL 0x3B, #0xFD; REMOVE THE COMPUTER TOKEN
+0338 A73B            736             MOV @R1, 0x3B
+                     737             
+033A 8601            738             MOV 0x01, @R0
+033C E7              739             MOV A, @R1
+033D 4402            740             ORL A, #0x02; ADD COMPUTER
+033F F7              741             MOV @R1, A
+0340 0203B1          742             LJMP COMPUTER_MOVES_DONE
+                     743     ;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+                     744             
+                     745             
+                     746             
+0343                 747             CHECK_NEXT_COMP_MOVE1:
+0343 BD0234          748             CJNE R5, #0x02,CHECK_NEXT_COMP_MOVE2
+                     749             ;0x37 TOKEN WAS MOVED
+                     750             ;MOVE 0x38
+0346 7D03            751             MOV R5, #0x03; OVERWRITE
+                     752             
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE    13
+
+                     753             
+                     754     ;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+0348 E538            755             MOV A, 0x38
+034A 602E            756             JZ CHECK_NEXT_COMP_MOVE2; CANNOT MOVE 0x36, TOKEN AT HOME
+                     757             
+034C 7838            758             MOV R0, #0x38
+034E E6              759             MOV A, @R0
+034F 2539            760             ADD A, 0x39; ADD DIE VALUE
+0351 C3              761             CLR C
+0352 9480            762             SUBB A, #0x80
+                     763             
+0354 5024            764             JNC CHECK_NEXT_COMP_MOVE2; GOING BEYOND THE BOUND
+                     765             ;CARRY. VALID. MOVE 0x36 TOKEN
+                     766     
+                     767             ;CHECK IF THE END ADDRESS HAS COMPUTER PATTERN OR NOT
+0356 7938            768             MOV R1, #0x38
+0358 E7              769             MOV A, @R1
+0359 2539            770             ADD A, 0x39
+035B F9              771             MOV R1, A
+035C E7              772             MOV A, @R1
+035D 5402            773             ANL A, #0x02
+035F B40202          774             CJNE A, #0x02, NO_COMP_PATTERN_FOUND2
+                     775             ;COMP PATTERN FOUND. SKIP THIS STEP
+0362 8016            776             SJMP CHECK_NEXT_COMP_MOVE2
+                     777     
+0364                 778             NO_COMP_PATTERN_FOUND2:
+                     779             ;CLEAR CURRENT LOCATION
+0364 8601            780             MOV 0x01, @R0
+                     781             ;CHANGED TOKEN POSITION
+0366 E6              782             MOV A, @R0
+0367 2539            783             ADD A, 0x39
+0369 F6              784             MOV @R0, A
+036A 873B            785             MOV 0x3B, @R1
+036C 533BFD          786             ANL 0x3B, #0xFD; REMOVE THE COMPUTER TOKEN
+036F A73B            787             MOV @R1, 0x3B
+                     788             
+0371 8601            789             MOV 0x01, @R0
+0373 E7              790             MOV A, @R1
+0374 4402            791             ORL A, #0x02; ADD COMPUTER
+0376 F7              792             MOV @R1, A
+0377 0203B1          793             LJMP COMPUTER_MOVES_DONE
+                     794     ;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+                     795             
+                     796             
+037A                 797             CHECK_NEXT_COMP_MOVE2:
+                     798             ;0x38 TOKEN WAS MOVED
+                     799             ;MOVE 0x35
+037A 7D00            800             MOV R5, #0x00; OVERWRITE        
+                     801     
+                     802     ;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+037C E535            803             MOV A, 0x35
+037E 602E            804             JZ CHECK_NEXT_COMP_MOVE3; CANNOT MOVE 0x36, TOKEN AT HOME
+                     805             
+0380 7835            806             MOV R0, #0x35
+0382 E6              807             MOV A, @R0
+0383 2539            808             ADD A, 0x39; ADD DIE VALUE
+0385 C3              809             CLR C
+0386 9480            810             SUBB A, #0x80
+                     811             
+0388 5024            812             JNC CHECK_NEXT_COMP_MOVE3; GOING BEYOND THE BOUND
+                     813             ;CARRY. VALID. MOVE 0x36 TOKEN
+                     814     
+                     815             ;CHECK IF THE END ADDRESS HAS COMPUTER PATTERN OR NOT
+038A 7935            816             MOV R1, #0x35
+038C E7              817             MOV A, @R1
+038D 2539            818             ADD A, 0x39
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE    14
+
+038F F9              819             MOV R1, A
+0390 E7              820             MOV A, @R1
+0391 5402            821             ANL A, #0x02
+0393 B40202          822             CJNE A, #0x02, NO_COMP_PATTERN_FOUND3
+                     823             ;COMP PATTERN FOUND. SKIP THIS STEP
+0396 8016            824             SJMP CHECK_NEXT_COMP_MOVE3
+                     825     
+0398                 826             NO_COMP_PATTERN_FOUND3:
+                     827             ;CLEAR CURRENT LOCATION
+0398 8601            828             MOV 0x01, @R0
+                     829             ;CHANGED TOKEN POSITION
+039A E6              830             MOV A, @R0
+039B 2539            831             ADD A, 0x39
+039D F6              832             MOV @R0, A
+039E 873B            833             MOV 0x3B, @R1
+03A0 533BFD          834             ANL 0x3B, #0xFD; REMOVE THE COMPUTER TOKEN
+03A3 A73B            835             MOV @R1, 0x3B
+                     836             
+03A5 8601            837             MOV 0x01, @R0
+03A7 E7              838             MOV A, @R1
+03A8 4402            839             ORL A, #0x02; ADD COMPUTER
+03AA F7              840             MOV @R1, A
+03AB 0203B1          841             LJMP COMPUTER_MOVES_DONE
+                     842     ;$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+                     843     
+                     844     
+03AE                 845             CHECK_NEXT_COMP_MOVE3:
+03AE 0202D5          846             LJMP TOKEN_MOVE_COMP
+                     847             
+03B1                 848             COMPUTER_MOVES_DONE:
+                     849             ;SHOW THINKING MESSAGE FOR SOMETIME
+                     850             ;ALSO IMPORTANT FOR PLAYER TO KNOW DIE ROLLED VALUE
+                     851             
+                     852             ;IF 0x20.3 IS SET THEN VALID. ELSE INVALID
+03B1 30030B          853             JNB 0x20.3, SKIP_LCD_THINK_MSG  
+03B4 120510          854             LCALL THINK_LCD_MSG
+03B7 7A14            855             MOV R2, #20;INIT COUNTER
+03B9 1204F0          856             LCALL TIMER1_WAIT
+03BC 120540          857             LCALL CLEAR_LCD_MSG
+                     858             
+03BF                 859             SKIP_LCD_THINK_MSG:
+03BF 1209A0          860             LCALL UPDATE_RED_RGB
+03C2 1209F9          861             LCALL UPDATE_GREEN_RGB
+                     862             ;CHECK HERE IS 0x20.0 WAS SET. IF YES THEN REPEAT COMPUTER'S CHANCE.
+                     863             
+                     864     ;       ;TEST
+                     865     ;       CLR 0x20.0;LET PLAYER PLAY NEXT
+                     866             
+                     867             ;----- CHECK IF COMPUTER WON ------
+03C5 120470          868             LCALL CHECK_COMPUTER_WON
+03C8 B40809          869             CJNE A, #0x08, COMPUTER_NOT_WON
+                     870             ;COMPUTER WON. SHOW ALL DISPLAY AND STOP STILL RESET
+03CB 120540          871             LCALL CLEAR_LCD_MSG
+03CE 12048A          872             LCALL WON_LCD_MSG
+                     873             
+03D1 0203DF          874             LJMP WAIT_FOR_RESET; GAME OVER. WAIT FOR RESET
+                     875             
+                     876             
+03D4                 877             COMPUTER_NOT_WON:
+03D4 300005          878             JNB 0x20.0, PLAYER_PLAY_NEXT
+03D7 C200            879             CLR 0x20.0; CLEAR THE FLAG
+03D9 02021B          880             LJMP COMPUTER_PLAY_NEXT; REPEAT AGAIN
+                     881             
+03DC                 882             PLAYER_PLAY_NEXT:
+03DC 020194          883             LJMP REPEAT_DIE_PLAYER
+                     884     
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE    15
+
+                     885             
+03DF                 886             WAIT_FOR_RESET:
+03DF 2080FD          887             JB P0.0, WAIT_FOR_RESET
+                     888             
+                     889             ;PROGRAM JUMPED HERE WHEN RESET BUTTON IS CLICKED IN-BETWEEN THE GAME
+03E2                 890             FORCE_RESET:
+                     891             ;SHOW RESET ON LCD
+03E2 12049F          892             LCALL RESET_LCD_MSG
+03E5 7A14            893             MOV R2, #20;INIT COUNTER
+03E7 1204F0          894             LCALL TIMER1_WAIT
+03EA 120540          895             LCALL CLEAR_LCD_MSG
+                     896             
+                     897             ;RESET OCCURRED. GO BACK
+03ED 02017B          898             LJMP RESET_GAME
+                     899     
+                     900     
+0450                 901     ORG 450H
+0450                 902             CHECK_PLAYER_WON:
+                     903             ;CHECK IF THE PLAYER WON THE GAME
+                     904             ;COUNT FROM 0x7C TO 0x7F
+                     905             ;IF IT IS EQUAL TO 4 THEN PLAYER WON. VALUE STORED IN A
+                     906             
+0450 787B            907             MOV R0, #0x7B
+0452 7400            908             MOV A, #0x00; CLEAR
+                     909             
+0454                 910             NOT_YET_WON_COUNTED_PLAYER:
+0454 08              911             INC R0
+0455 8607            912             MOV 0x07, @R0
+0457 530701          913             ANL 0x07, #0x01; COUNT PLAYER
+045A 2F              914             ADD A, R7
+045B B87FF6          915             CJNE R0, #0x7F, NOT_YET_WON_COUNTED_PLAYER
+                     916             ;COUNTED
+045E 22              917             RET
+                     918             
+                     919     
+0470                 920     ORG 470H
+0470                 921             CHECK_COMPUTER_WON:
+                     922             ;CHECK IF THE COMPUTER WON THE GAME
+                     923             ;COUNT FROM 0x7C TO 0x7F
+                     924             ;IF IT IS EQUAL TO 8 THEN COMPUTER WON. VALUE STORED IN A
+                     925             
+0470 787B            926             MOV R0, #0x7B
+0472 7400            927             MOV A, #0x00; CLEAR
+                     928             
+0474                 929             NOT_YET_WON_COUNTED_COMP:
+0474 08              930             INC R0
+0475 8607            931             MOV 0x07, @R0
+0477 530702          932             ANL 0x07, #0x02; COUNT COMPUTER
+047A 2F              933             ADD A, R7
+047B B87FF6          934             CJNE R0, #0x7F, NOT_YET_WON_COUNTED_COMP
+                     935             ;COUNTED
+047E 22              936             RET
+                     937     
+                     938     
+048A                 939     ORG 48AH
+                     940             ;SHOW WON ON LCD
+048A                 941             WON_LCD_MSG:
+048A 7490            942             MOV A, #0x90;CURSOR LOCATION
+048C 120930          943             LCALL LCD_CMD_SEND
+048F 7457            944             MOV A, #0x57; W
+0491 120950          945             LCALL LCD_DATA_SEND
+0494 744F            946             MOV A, #0x4F; O
+0496 120950          947             LCALL LCD_DATA_SEND
+0499 744E            948             MOV A, #0x4E; N
+049B 120950          949             LCALL LCD_DATA_SEND
+049E 22              950             RET
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE    16
+
+                     951             
+049F                 952             RESET_LCD_MSG:
+049F 7490            953             MOV A, #0x90;CURSOR LOCATION
+04A1 120930          954             LCALL LCD_CMD_SEND
+04A4 7452            955             MOV A, #0x52; R
+04A6 120950          956             LCALL LCD_DATA_SEND
+04A9 7445            957             MOV A, #0x45; E
+04AB 120950          958             LCALL LCD_DATA_SEND
+04AE 7453            959             MOV A, #0x53; S
+04B0 120950          960             LCALL LCD_DATA_SEND
+04B3 7445            961             MOV A, #0x45; E
+04B5 120950          962             LCALL LCD_DATA_SEND
+04B8 7454            963             MOV A, #0x54; T
+04BA 120950          964             LCALL LCD_DATA_SEND
+04BD 22              965             RET
+                     966     
+04F0                 967     ORG 4F0H
+04F0                 968             TIMER1_WAIT:
+04F0 C202            969             CLR 0x20.2
+04F2 D28E            970             SETB TR1
+04F4 3002FD          971             WAIT_FOR_TIMER1: JNB 0x20.2, WAIT_FOR_TIMER1
+04F7 C28E            972             CLR TR1
+04F9 120540          973             LCALL CLEAR_LCD_MSG
+04FC 22              974             RET
+                     975             
+0510                 976     ORG 510H
+0510                 977             THINK_LCD_MSG:
+0510 7490            978             MOV A, #0x90;CURSOR LOCATION
+0512 120930          979             LCALL LCD_CMD_SEND
+0515 7449            980             MOV A, #0x49; I
+0517 120950          981             LCALL LCD_DATA_SEND
+051A 744E            982             MOV A, #0x4E; N
+051C 120950          983             LCALL LCD_DATA_SEND
+051F 7453            984             MOV A, #0x53; S
+0521 120950          985             LCALL LCD_DATA_SEND
+0524 7450            986             MOV A, #0x50; P
+0526 120950          987             LCALL LCD_DATA_SEND
+0529 7445            988             MOV A, #0x45; E
+052B 120950          989             LCALL LCD_DATA_SEND
+052E 7443            990             MOV A, #0x43; C
+0530 120950          991             LCALL LCD_DATA_SEND
+0533 7454            992             MOV A, #0x54; T
+0535 120950          993             LCALL LCD_DATA_SEND
+                     994             
+0538 22              995             RET
+                     996             
+                     997     
+0540                 998     ORG 540H
+0540                 999             CLEAR_LCD_MSG:
+                    1000             ;FOR CLEARING THE 0x90 LINE OF LCD
+                    1001             
+0540 7490           1002             MOV A, #0x90;CURSOR LOCATION
+0542 120930         1003             LCALL LCD_CMD_SEND
+0545 7420           1004             MOV A, #0x20; SP
+0547 120950         1005             LCALL LCD_DATA_SEND
+054A 7420           1006             MOV A, #0x20; SP
+054C 120950         1007             LCALL LCD_DATA_SEND
+054F 7420           1008             MOV A, #0x20; SP
+0551 120950         1009             LCALL LCD_DATA_SEND
+0554 7420           1010             MOV A, #0x20; SP
+0556 120950         1011             LCALL LCD_DATA_SEND
+0559 7420           1012             MOV A, #0x20; SP
+055B 120950         1013             LCALL LCD_DATA_SEND
+055E 7420           1014             MOV A, #0x20; SP
+0560 120950         1015             LCALL LCD_DATA_SEND
+0563 7420           1016             MOV A, #0x20; SP
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE    17
+
+0565 120950         1017             LCALL LCD_DATA_SEND
+                    1018             
+0568 22             1019             RET
+                    1020     
+0570                1021     ORG 570H
+0570                1022             WC_LCD_MSG:
+                    1023             
+0570 7490           1024             MOV A, #0x90;CURSOR LOCATION
+0572 120930         1025             LCALL LCD_CMD_SEND
+0575 7457           1026             MOV A, #0x57; W
+0577 120950         1027             LCALL LCD_DATA_SEND
+057A 7445           1028             MOV A, #0x45; E
+057C 120950         1029             LCALL LCD_DATA_SEND
+057F 744C           1030             MOV A, #0x4C; L
+0581 120950         1031             LCALL LCD_DATA_SEND
+0584 7443           1032             MOV A, #0x43; C
+0586 120950         1033             LCALL LCD_DATA_SEND
+0589 744F           1034             MOV A, #0x4F; O
+058B 120950         1035             LCALL LCD_DATA_SEND
+058E 744D           1036             MOV A, #0x4D; M
+0590 120950         1037             LCALL LCD_DATA_SEND
+0593 7445           1038             MOV A, #0x45; E
+0595 120950         1039             LCALL LCD_DATA_SEND
+                    1040             
+0598 22             1041             RET
+                    1042     
+05A0                1043     ORG 5A0H
+05A0                1044             INVALID_LCD_MSG:
+                    1045             
+05A0 7490           1046             MOV A, #0x90;CURSOR LOCATION
+05A2 120930         1047             LCALL LCD_CMD_SEND
+05A5 7449           1048             MOV A, #0x49; I
+05A7 120950         1049             LCALL LCD_DATA_SEND
+05AA 744E           1050             MOV A, #0x4E; N
+05AC 120950         1051             LCALL LCD_DATA_SEND
+05AF 7456           1052             MOV A, #0x56; V
+05B1 120950         1053             LCALL LCD_DATA_SEND
+05B4 7441           1054             MOV A, #0x41; A
+05B6 120950         1055             LCALL LCD_DATA_SEND
+05B9 744C           1056             MOV A, #0x4C; L
+05BB 120950         1057             LCALL LCD_DATA_SEND
+05BE 7449           1058             MOV A, #0x49; I
+05C0 120950         1059             LCALL LCD_DATA_SEND
+05C3 7444           1060             MOV A, #0x44; D
+05C5 120950         1061             LCALL LCD_DATA_SEND
+                    1062             
+05C8 22             1063             RET
+                    1064     
+05D0                1065     ORG 5D0H
+05D0                1066             NA_LCD_MSG:
+                    1067             ;FOR CLEARING THE 0x90 LINE OF LCD
+                    1068             
+05D0 7490           1069             MOV A, #0x90;CURSOR LOCATION
+05D2 120930         1070             LCALL LCD_CMD_SEND
+05D5 744D           1071             MOV A, #0x4D; M
+05D7 120950         1072             LCALL LCD_DATA_SEND
+05DA 744F           1073             MOV A, #0x4F; O
+05DC 120950         1074             LCALL LCD_DATA_SEND
+05DF 7456           1075             MOV A, #0x56; V
+05E1 120950         1076             LCALL LCD_DATA_SEND
+05E4 7445           1077             MOV A, #0x45; E
+05E6 120950         1078             LCALL LCD_DATA_SEND
+05E9 7420           1079             MOV A, #0x20; SP
+05EB 120950         1080             LCALL LCD_DATA_SEND
+05EE 744E           1081             MOV A, #0x4E; N
+05F0 120950         1082             LCALL LCD_DATA_SEND
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE    18
+
+05F3 7441           1083             MOV A, #0x41; A
+05F5 120950         1084             LCALL LCD_DATA_SEND
+                    1085             
+05F8 22             1086             RET
+                    1087     
+                    1088     
+                    1089     ;@@@@@@@@@@@@ SUBROUTINE FOR PLAYER @@@@@@@@@@@@@@
+0600                1090     ORG 600H
+                    1091             ;--------------- SELECT THE TOKEN ----------------
+0600                1092             TOKEN_SELECT:
+0600 858030         1093             MOV 0x30, P0;
+                    1094             
+                    1095             ;WAIT TILL KEY IS CLICKED ON THE MATRIX
+0603                1096             WAIT_FOR_STATE_CHANGE:
+0603 308008         1097             JNB P0.0, RESET_TOKEN
+0606 308124         1098             JNB P0.1, KEY4
+0609 308206         1099             JNB P0.2, STATE_CHANGED
+060C 80F5           1100             SJMP WAIT_FOR_STATE_CHANGE
+                    1101             
+060E                1102             RESET_TOKEN:
+                    1103             ;RESET WAS CLICKED. DO SOMETHING
+060E 0203E2         1104             LJMP FORCE_RESET
+0611 22             1105             RET
+                    1106     
+0612                1107             STATE_CHANGED:
+0612 D284           1108             SETB P0.4
+0614 20820A         1109             JB P0.2, KEY1
+                    1110             
+0617 D285           1111             SETB P0.5
+0619 208209         1112             JB P0.2, KEY2
+                    1113             
+061C D286           1114             SETB P0.6
+061E 208208         1115             JB P0.2, KEY3
+                    1116             
+                    1117             
+                    1118             ;TOKEN ADDRESS DEFINED BELOW FOR PLAYER
+                    1119             
+0621                1120             KEY1:
+0621 7831           1121             MOV R0, #0x31
+0623 800A           1122             SJMP TOKEN_SELECT_OVER
+                    1123             
+0625                1124             KEY2:
+0625 7832           1125             MOV R0, #0x32
+0627 8006           1126             SJMP TOKEN_SELECT_OVER
+                    1127             
+0629                1128             KEY3:
+0629 7833           1129             MOV R0, #0x33
+062B 8002           1130             SJMP TOKEN_SELECT_OVER
+                    1131             
+062D                1132             KEY4:
+062D 7834           1133             MOV R0, #0x34
+                    1134             
+062F                1135             TOKEN_SELECT_OVER:
+062F 75800F         1136             MOV P0, #0x0F
+0632                1137             WAIT_FOR_KEY_RELEASE:
+0632 75800F         1138             MOV P0, #0x0F
+0635 3081FA         1139             JNB P0.1, WAIT_FOR_KEY_RELEASE
+0638 3082F7         1140             JNB P0.2, WAIT_FOR_KEY_RELEASE
+                    1141             
+063B 22             1142             RET
+                    1143     
+                    1144     
+                    1145             
+063C                1146             TOKEN_PLACE_PLAYER:
+                    1147             ;R0 HAS THE TOKEN ADDRESS. 0x3A HAS THE NEW TOKEN ADDRESS. R7 IS USED FOR BACKUP
+063C A93A           1148             MOV R1, 0x3A
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE    19
+
+                    1149             ;VERIFY IF THE NEW LOCATION IS WITHIN 7F BOUND
+063E E9             1150             MOV A, R1;
+063F C3             1151             CLR C; CLEAR CARRY
+0640 9480           1152             SUBB A, #0x80
+                    1153             ;IF CARRY GENERATED, THEN VALID MOVE
+0642 4002           1154             JC VALID_NEW_LOCATION_PLAYER0;
+0644 8038           1155             SJMP INVALID_PLAYER_LOCATION
+                    1156             
+0646                1157             VALID_NEW_LOCATION_PLAYER0:
+                    1158             ;NOW VERIFY IS THE NEW LOCATION HAS PLAYER TOKEN
+0646 E7             1159             MOV A, @R1
+0647 5401           1160             ANL A, #0x01; MASK OTHER BITS
+0649 B40102         1161             CJNE A, #0x01, VALID_NEW_LOCATION_PLAYER; IF NOT MATCHING THEN VALID.
+064C 8030           1162             SJMP INVALID_PLAYER_LOCATION
+                    1163             
+064E                1164             VALID_NEW_LOCATION_PLAYER:
+                    1165             
+                    1166             ;NOW CHECK IF THE OTHER PLAYER'S TOKEN PRESENT OR NOT
+                    1167             ;PLAYER PATH AND COMPUTER PATH MERGE FROM LOCATION 0x5C
+                    1168             ;PLAYER PATH. FROM 0x5C TO 0x6B, COMPUTER PATH IS INC BY 0x10
+                    1169             ;                         FROM 0x6C TO 0x7B, COMPUTER PATH IS DEC BY 0x10
+                    1170             
+                    1171             ;CHECK IF NEW LOCATION HAS COMPUTER TOKEN
+064E E9             1172             MOV A, R1; CALCULATE THE OFFSET LOCATION FIRST
+064F C3             1173             CLR C; CLEAR CARRY
+0650 946C           1174             SUBB A, #0x6C
+                    1175             ;IF CARRY GENERATED, THEN INC BY 0x10
+0652 4007           1176             JC COMP_TOKEN_INC_F
+                    1177             ;COMPUTER TOKEN DEC BY F
+0654 E9             1178             MOV A, R1
+0655 C3             1179             CLR C
+0656 9410           1180             SUBB A, #0x10
+0658 F9             1181             MOV R1, A
+0659 8004           1182             SJMP TOKEN_GET_STEP_DONE
+                    1183             
+065B                1184             COMP_TOKEN_INC_F:
+065B E9             1185             MOV A, R1
+065C 2410           1186             ADD A, #0x10
+065E F9             1187             MOV R1, A
+                    1188             
+065F                1189             TOKEN_GET_STEP_DONE:
+065F E7             1190             MOV A, @R1; GET COMPUTER MERGE PATH
+                    1191             
+0660 5402           1192             ANL A, #0x02; MASK
+0662 B40216         1193             CJNE A, #0x02, NO_COMPUTER_TOKEN
+                    1194             
+                    1195             ;COMPUTER TOKEN FOUND AND STORED IN R1. MAIN ROUTINE CLEARS THAT REGISTER. MAKE THE
+                              COMPUTER TOKEN GO TO HOME LOCATION
+                    1196             ;FIND WHICH COMPUTER TOKEN HAS THIS LOCATION
+                    1197             ;COMPUTER TOKEN LOCATION 0x35, 0x36, 0x37, 0x38
+                    1198             ;CHECK WHICH LOCATION ABOVE HAS THE COMPUTER TOKEN
+0665 8807           1199             MOV 0x07, R0; BACKUP R0 IN R7
+0667 7834           1200             MOV R0, #0x34
+                    1201             
+0669                1202             CHECK_NEXT_COMP_TOKEN:
+0669 08             1203             INC R0
+066A E6             1204             MOV A, @R0
+066B B501FB         1205             CJNE A, 0x01, CHECK_NEXT_COMP_TOKEN
+                    1206             ;FOUND TOKEN. STORED IN R0
+066E 7600           1207             MOV @R0, #0x00; RESET TOKEN ADDRESS
+0670 873B           1208             MOV 0x3B, @R1
+0672 533BFD         1209             ANL 0x3B, #0xFD; REMOVE THE COMPUTER TOKEN
+0675 A73B           1210             MOV @R1, 0x3B
+                    1211             
+                    1212             ;RESTORE POINTERS
+0677 A807           1213             MOV R0, 0x07
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE    20
+
+0679 A93A           1214             MOV R1, 0x3A
+                    1215             
+067B                1216             NO_COMPUTER_TOKEN:
+067B D201           1217             SETB 0x20.1; VALID FLAG
+067D 22             1218             RET
+                    1219             
+067E                1220             INVALID_PLAYER_LOCATION:
+                    1221             ;INVALID
+067E 1205D0         1222             LCALL NA_LCD_MSG
+0681 7A12           1223             MOV R2, #18;INIT COUNTER
+0683 1204F0         1224             LCALL TIMER1_WAIT
+                    1225             
+0686 C201           1226             CLR 0x20.1; INVALID FLAG
+0688 22             1227             RET
+                    1228             
+                    1229     
+0700                1230     ORG 700H
+0700                1231             VALIDITY_CHECK:
+                    1232             ;THIS SUBROUTINE IS USED FOR CHECKING THE VALIDIITY OF THE DIE ROLL.
+                    1233             ;IF DIE ROLL VALUE CAN BE USED TO PERFORM A VALID MOVE THEN THIS SUBROUTINE
+                    1234             ;SETS THE FLAG 0x20.3 STATING A VALID DIE ROLL
+                    1235             
+                    1236             ;CALL THIS SUBROUTINE WITH TOKEN ADDRESS - 1 VALUE IN R0 AND TOKEN MASK IN R6
+                    1237             ;USING R7 COUNTER 
+                    1238             
+0700 7F05           1239             MOV R7, #5
+                    1240             
+0702                1241             VALIDITY_CHECK1_CONT:
+0702 DF0B           1242             DJNZ R7, CONT_VALIDITY_CHECK1
+                    1243             ;NO VALID MOVES LEFT WITH PLAYER. LET COMPUTER PLAY
+                    1244             
+0704 1205A0         1245             LCALL INVALID_LCD_MSG
+0707 7A12           1246             MOV R2, #18;INIT COUNTER
+0709 1204F0         1247             LCALL TIMER1_WAIT
+                    1248             
+070C C203           1249             CLR 0x20.3
+070E 22             1250             RET; RETURN FROM HERE.
+                    1251             
+070F                1252             CONT_VALIDITY_CHECK1:
+070F 08             1253             INC R0
+0710 E6             1254             MOV A, @R0
+0711 7006           1255             JNZ FOUND_TOKEN_OUTSIDE_HOME
+                    1256             
+                    1257             ;INDICATES 6 WAS SCORED, A TOKEN IS AVAILABLE AT THE HOME POSITION
+0713 3000EC         1258             JNB 0x20.0, VALIDITY_CHECK1_CONT; SKIP THIS STEP IF '6' WAS SCORED
+                    1259             
+                    1260             ;VALID
+0716 D203           1261             SETB 0x20.3
+0718 22             1262             RET
+                    1263             
+0719                1264             FOUND_TOKEN_OUTSIDE_HOME:
+                    1265             ;VALID TOKEN POSITION FOUND. NOW CHECK IF TOKENS HAVE VALID END ADDRESS
+0719 2539           1266             ADD A, 0x39; ADD CURRENT DIE VAL TO VALID TOKEN
+071B C3             1267             CLR C; CLEAR CARRY
+071C 9480           1268             SUBB A, #0x80
+                    1269             ;IF CARRY GENERATED, THEN INVALID MOVE
+071E 50E2           1270             JNC VALIDITY_CHECK1_CONT; GO BACK
+                    1271             ;CARRY SO VALID TOKEN FOUND
+                    1272             
+                    1273             ;CHECK IF THAT LOCATION HAS SAME PLAYER TOKEN
+0720 E6             1274             MOV A, @R0
+0721 2539           1275             ADD A, 0x39
+0723 F9             1276             MOV R1, A
+0724 E7             1277             MOV A, @R1
+0725 5506           1278             ANL A, 0x06; TOKEN MASK
+0727 B50602         1279             CJNE A, 0x06, VALID_TRUE;IF END ADDRESS DOES NOT HAVE THE RED PATTERN THIS IT IS VA
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE    21
+
+                             LID
+                    1280             ;INVALID
+072A 80D6           1281             SJMP VALIDITY_CHECK1_CONT;REPEAT CHECK WITH NEXT TOKEN
+                    1282             
+072C                1283             VALID_TRUE:
+072C D203           1284             SETB 0x20.3
+072E 22             1285             RET
+                    1286     
+                    1287             
+0750                1288     ORG 750H
+0750                1289             COMPUTER_DIE:
+                    1290             ;COMPUTER DIE VALUE IS RETURNED
+                    1291             ;0x39 HAS THE DIE VALUE
+0750 7A19           1292             MOV R2, #25;INIT COUNTER
+                    1293             
+                    1294             ;PERFORM TIMER OPERATON HERE
+0752 C202           1295             CLR 0x20.2
+0754 D28E           1296             SETB TR1
+0756                1297             WAIT_FOR_TIMER2: 
+0756 120870         1298             LCALL QUICK_DIE
+0759 3002FA         1299             JNB 0x20.2, WAIT_FOR_TIMER2
+075C C28E           1300             CLR TR1
+                    1301             
+                    1302             ;SHOW DIE VALUE
+075E 7485           1303             MOV A, #0x85;CURSOR LOCATION
+0760 120930         1304             LCALL LCD_CMD_SEND
+0763 E58A           1305             MOV A, TL0; DIE
+0765 C3             1306             CLR C
+0766 94F9           1307             SUBB A, #0xF9
+0768 F539           1308             MOV 0x39, A; BACKUP A DIE VALUE
+076A 2430           1309             ADD A, #0x30
+                    1310     
+                    1311             
+                    1312     ;;      ;--------TEST--------
+                    1313             ;ALWAYS GIVE 6 DIE VALUE AFTER ROLL
+                    1314     ;       MOV A, #0x34
+                    1315     ;       MOV 0x39, #0x04
+                    1316             
+076C 120950         1317             LCALL LCD_DATA_SEND
+076F 22             1318             RET
+                    1319     
+                    1320             
+0800                1321     ORG 800H
+0800                1322             PLAYER_DIE:
+                    1323             ;HERE THE PLAYER'S DIE VALUE IS RETURNED. 0x20.4 IS SET IF RESET BUTTON IS CLICKED
+0800 C204           1324             CLR 0x20.4; CLEAR RESET INDICATOR
+                    1325             ;0x39 CONTAINS DIE VALUE. A HAS ASCII VALUE OF DIE
+                    1326             ;POLL P0.3
+0802                1327             WAIT_FOR_PLAYER_ROLL: 
+0802 120870         1328             LCALL QUICK_DIE
+0805 308018         1329             JNB P0.0, RESET_CLICKED
+0808 2083F7         1330             JB P0.3, WAIT_FOR_PLAYER_ROLL
+                    1331             
+                    1332             ;BUTTON CLICKED. SHOW DIE VALIE
+080B 7485           1333             MOV A, #0x85;CURSOR LOCATION
+080D 120930         1334             LCALL LCD_CMD_SEND
+0810 E58A           1335             MOV A, TL0; DIE
+0812 C3             1336             CLR C
+0813 94F9           1337             SUBB A, #0xF9
+0815 F539           1338             MOV 0x39, A; BACKUP A DIE VALUE
+0817 2430           1339             ADD A, #0x30
+                    1340             
+                    1341             ;WAIT FOR PLAYER TO RELEASE THE ROLL BUTTON
+0819                1342             WAIT_FOR_PLAYER_RELEASE:
+0819 3083FD         1343             JNB P0.3, WAIT_FOR_PLAYER_RELEASE
+                    1344             
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE    22
+
+                    1345     ;;      ;--------TEST--------
+                    1346     ;       ;ALWAYS GIVE 6 DIE VALUE AFTER ROLL
+                    1347     ;       MOV A, #0x31
+                    1348     ;       MOV 0x39, #0x01
+                    1349     ;;      
+081C 120950         1350             LCALL LCD_DATA_SEND
+081F 22             1351             RET
+                    1352             
+                    1353             
+0820                1354             RESET_CLICKED:
+0820 D204           1355             SETB 0x20.4; RESET OCCURRED
+0822 22             1356             RET
+                    1357             
+                    1358             
+0870                1359     ORG 870H
+0870                1360             QUICK_DIE:
+                    1361             ;SHOW DIE ROLL ON LCD
+0870 7485           1362             MOV A, #0x85;CURSOR LOCATION
+0872 120930         1363             LCALL LCD_CMD_SEND
+0875 E58A           1364             MOV A, TL0; DIE
+0877 120950         1365             LCALL LCD_DATA_SEND
+087A 22             1366             RET
+                    1367     
+                    1368     
+0890                1369     ORG 0890H
+0890                1370             PLAYER_LCD:
+                    1371             ;SHOW 'PLAYER' ON LCD LINE 0xC0
+0890 74C0           1372             MOV A, #0xC0;CURSOR LOCATION
+0892 120930         1373             LCALL LCD_CMD_SEND
+0895 7450           1374             MOV A, #0x50; P
+0897 120950         1375             LCALL LCD_DATA_SEND
+089A 744C           1376             MOV A, #0x4C; L
+089C 120950         1377             LCALL LCD_DATA_SEND
+089F 7441           1378             MOV A, #0x41; A
+08A1 120950         1379             LCALL LCD_DATA_SEND
+08A4 7459           1380             MOV A, #0x59; Y
+08A6 120950         1381             LCALL LCD_DATA_SEND
+08A9 7445           1382             MOV A, #0x45; E
+08AB 120950         1383             LCALL LCD_DATA_SEND
+08AE 7452           1384             MOV A, #0x52; R
+08B0 120950         1385             LCALL LCD_DATA_SEND
+08B3 7420           1386             MOV A, #0x20; SP
+08B5 120950         1387             LCALL LCD_DATA_SEND
+08B8 7420           1388             MOV A, #0x20; SP
+08BA 120950         1389             LCALL LCD_DATA_SEND
+08BD 22             1390             RET
+                    1391             
+08C0                1392     ORG 8C0H
+08C0                1393             COMPUTER_LCD:
+                    1394             ;SHOW 'MACHINE' ON LCD LINE 0xC0
+08C0 74C0           1395             MOV A, #0xC0;CURSOR LOCATION
+08C2 120930         1396             LCALL LCD_CMD_SEND
+08C5 7443           1397             MOV A, #0x43; C
+08C7 120950         1398             LCALL LCD_DATA_SEND
+08CA 744F           1399             MOV A, #0x4F; O
+08CC 120950         1400             LCALL LCD_DATA_SEND
+08CF 744D           1401             MOV A, #0x4D; M
+08D1 120950         1402             LCALL LCD_DATA_SEND
+08D4 7450           1403             MOV A, #0x50; P
+08D6 120950         1404             LCALL LCD_DATA_SEND
+08D9 7455           1405             MOV A, #0x55; U
+08DB 120950         1406             LCALL LCD_DATA_SEND
+08DE 7454           1407             MOV A, #0x54; T
+08E0 120950         1408             LCALL LCD_DATA_SEND
+08E3 7445           1409             MOV A, #0x45; E
+08E5 120950         1410             LCALL LCD_DATA_SEND
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE    23
+
+08E8 7452           1411             MOV A, #0x52; R
+08EA 120950         1412             LCALL LCD_DATA_SEND
+08ED 22             1413             RET
+                    1414     
+                    1415     
+                    1416     ;############## LCD Subroutines ##################
+0930                1417     ORG 0930H
+0930                1418             LCD_CMD_SEND:
+                    1419             ;CMD TO BE SENT IS STORED IN ACC
+0930 F590           1420             MOV P1, A
+0932 C2A4           1421             CLR RS; SENDING COMMAND
+0934 D2A5           1422             SETB EN
+0936 C2A5           1423             CLR EN
+0938 120970         1424             LCALL LCD_BUSY_CHECK
+093B C4             1425             SWAP A; SEND LOWER NIBBLE
+093C F590           1426             MOV P1, A
+093E C2A4           1427             CLR RS; SENDING COMMAND
+0940 D2A5           1428             SETB EN
+0942 C2A5           1429             CLR EN
+0944 120970         1430             LCALL LCD_BUSY_CHECK
+                    1431             
+0947 22             1432             RET
+                    1433             
+0950                1434     ORG 0950H
+0950                1435             LCD_DATA_SEND:
+                    1436             ;DATA TO BE SENT IS STORED IN ACC
+0950 F590           1437             MOV P1, A
+0952 D2A4           1438             SETB RS; SENDING DATA
+0954 D2A5           1439             SETB EN
+0956 C2A5           1440             CLR EN
+0958 120970         1441             LCALL LCD_BUSY_CHECK
+095B C4             1442             SWAP A; SEND LOWER NIBBLE
+095C F590           1443             MOV P1, A
+095E D2A4           1444             SETB RS; SENDING DATA
+0960 D2A5           1445             SETB EN
+0962 C2A5           1446             CLR EN
+0964 120970         1447             LCALL LCD_BUSY_CHECK
+0967 22             1448             RET
+                    1449             
+0970                1450     ORG 0970H
+                    1451             
+0970                1452             LCD_BUSY_CHECK:
+0970 7C07           1453             MOV R4, #0x07
+0972                1454             REP:
+0972 DCFE           1455             DJNZ R4, REP
+0974 22             1456             RET
+                    1457             
+0980                1458     ORG 0980H
+0980                1459             CLEAR_LCD:
+0980 7401           1460             MOV A, #0x01;CLEAR DISPLAY
+0982 120930         1461             LCALL LCD_CMD_SEND
+                    1462             ;WAIT FOR LCD TO CLEAR
+0985 784F           1463             MOV R0, #0x4F; LONG DELAY
+0987                1464             REP2:
+0987 120970         1465             LCALL LCD_BUSY_CHECK
+098A D8FB           1466             DJNZ R0, REP2
+                    1467             
+098C 22             1468             RET
+                    1469             
+                    1470             
+                    1471     ;############## 4094 SUBROUTINE ###############
+09A0                1472     ORG 09A0H
+                    1473             ;THE FOLLOWING SUBROUTINE IS USED FOR UPDATING THE 4094s WITH DATA IN LOCATION 0x5C
+                              TILL 0x7F
+                    1474             ;0x30 IS USED AS A COUNTER
+                    1475             ;R7 IS USED FOR STORING THE RAM DATA
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE    24
+
+                    1476             
+09A0                1477             UPDATE_RED_RGB:
+09A0 C2A3           1478             CLR STR; CLEAR STROBE
+09A2 785B           1479             MOV R0, #0x5B; INIT THE DATA POINTER
+09A4 7400           1480             MOV A, #0; CLEAR A REGISTER
+09A6 C3             1481             CLR C; CLEAR CARRY
+                    1482             ;READ THE DATA IN THE LOCATION. IF THE DATA IS 0x01 THEN APPEND IT TO 'A' REGISTER.
+                              ELSE APPEND 0
+                    1483             ;TO 'A' REGISTER
+                    1484             
+09A7                1485             REPEAT_NEXT_BYTE_R:
+09A7 753009         1486             MOV 0x30, #9; INIT COUNTER
+09AA                1487             CHECK_NEXT_R:
+09AA B87F25         1488             CJNE R0, #0x7F, NOT_READ_ALL_R
+                    1489             ;TILL HERE ALL THE RAM LOC WAS READ.
+                    1490             ;ADDITIONAL 4 SHIFTS ARE REQUIRED TO BE DONE WHICH ADDS THE PLAYER TOKEN AT HOME
+                    1491             
+                    1492     ;--------------- ADD TOKEN AT HOME INFO HERE -------------
+                    1493             ;FOR RED: TOKEN 1: 0x31
+                    1494             ;                 TOKEN 2: 0x32
+                    1495             ;                 TOKEN 3: 0x33
+                    1496             ;                 TOKEN 4: 0x34 
+                    1497             ;IF VALUE IS 0 THEN TOKEN AT HOME
+09AD 7830           1498             MOV R0, #0x30
+                    1499             
+09AF                1500             REPEAT_TOKEN_HOME_R:
+                    1501             
+09AF B83402         1502             CJNE R0, #0x34, NOT_READ_ALL_TOKEN_R
+                    1503             ;ALL TOKENS READ
+09B2 800E           1504             SJMP ENDING_R_UPDATE; END ROUTINE CALLED
+                    1505             
+09B4                1506             NOT_READ_ALL_TOKEN_R:
+09B4 08             1507             INC R0
+09B5 8607           1508             MOV 0x07, @R0
+09B7 BF0004         1509             CJNE R7, #0x00, R_NOT_AT_HOME
+                    1510             ;TOKEN AT HOME
+09BA D3             1511             SETB C
+09BB 13             1512             RRC A
+09BC 80F1           1513             SJMP REPEAT_TOKEN_HOME_R
+                    1514             
+09BE                1515             R_NOT_AT_HOME:
+09BE C3             1516             CLR C
+09BF 13             1517             RRC A
+09C0 80ED           1518             SJMP REPEAT_TOKEN_HOME_R
+                    1519     ;---------------------------------------------------------
+                    1520             
+09C2                1521             ENDING_R_UPDATE:
+09C2 753008         1522             MOV 0x30, #8
+                    1523             
+09C5                1524             KEEP_SENDING_R1:
+09C5 13             1525                     RRC A
+                    1526                     ;SEND THE DATA
+09C6 C2A1           1527                     CLR CLK_R
+09C8 92A0           1528                     MOV DAT,C; SET THE DATA ON THE PIN
+09CA D2A1           1529                     SETB CLK_R      
+09CC D530F6         1530                     DJNZ 0x30,KEEP_SENDING_R1
+                    1531             ;DONE SENDING THE DATA
+                    1532             
+                    1533             ;DONE SENDING
+09CF D2A3           1534             SETB STR; CLEAR STROBE
+09D1 22             1535             RET
+                    1536             
+                    1537             
+09D2                1538             NOT_READ_ALL_R:
+09D2 D53013         1539             DJNZ 0x30, CHECK_NEXT0_R
+                    1540             ;SEND THE DATA TO 4094
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE    25
+
+09D5 753008         1541             MOV 0x30, #8; INIT THE POINTER
+09D8 C3             1542             CLR C
+09D9                1543             KEEP_SENDING_R:
+09D9 13             1544                     RRC A
+                    1545                     ;SEND THE DATA
+09DA C2A1           1546                     CLR CLK_R
+09DC 92A0           1547                     MOV DAT,C; SET THE DATA ON THE PIN
+09DE D2A1           1548                     SETB CLK_R      
+09E0 D530F6         1549                     DJNZ 0x30,KEEP_SENDING_R
+                    1550             ;DONE SENDING THE DATA
+09E3 7400           1551             MOV A, #0; CLEAR A REGISTER
+09E5 C3             1552             CLR C; CLEAR CARRY
+09E6 80BF           1553             SJMP REPEAT_NEXT_BYTE_R
+                    1554             
+09E8                1555             CHECK_NEXT0_R:
+09E8 08             1556             INC R0
+09E9 8607           1557             MOV 0x07, @R0; STORE DATA IN 0x30
+09EB 530701         1558             ANL 0x07, #0x01; MASK OTHER BITS
+09EE BF0104         1559             CJNE R7, #0x01, NOT_R
+                    1560             ;FOUND A TOKEN
+09F1 D3             1561             SETB C
+09F2 13             1562             RRC A; ADD THE DATA
+09F3 80B5           1563             SJMP CHECK_NEXT_R
+                    1564             
+09F5                1565             NOT_R:
+                    1566             ;NOT RED TOKEN
+09F5 C3             1567             CLR C
+09F6 13             1568             RRC A; ADD THE DATA
+09F7 80B1           1569             SJMP CHECK_NEXT_R
+                    1570     
+                    1571     ;########################### FOR GREEN ##############################
+                    1572     
+09F9                1573             UPDATE_GREEN_RGB:
+09F9 C2A3           1574             CLR STR; CLEAR STROBE
+09FB 785B           1575             MOV R0, #0x5B; INIT THE DATA POINTER
+09FD 7400           1576             MOV A, #0; CLEAR A REGISTER
+09FF C3             1577             CLR C; CLEAR CARRY
+                    1578             ;READ THE DATA IN THE LOCATION. IF THE DATA IS 0x01 THEN APPEND IT TO 'A' REGISTER.
+                              ELSE APPEND 0
+                    1579             ;TO 'A' REGISTER
+                    1580             
+0A00                1581             REPEAT_NEXT_BYTE_G:
+0A00 753009         1582             MOV 0x30, #9; INIT COUNTER
+0A03                1583             CHECK_NEXT_G:
+0A03 B87F25         1584             CJNE R0, #0x7F, NOT_READ_ALL_G
+                    1585             ;TILL HERE ALL THE RAM LOC WAS READ.
+                    1586             ;ADDITIONAL 4 SHIFTS ARE REQUIRED TO BE DONE WHICH ADDS THE PLAYER TOKEN AT HOME
+                    1587             
+                    1588     ;--------------- ADD TOKEN AT HOME INFO HERE -------------
+                    1589             ;FOR GREEN: TOKEN 1: 0x35
+                    1590             ;                       TOKEN 2: 0x36
+                    1591             ;                       TOKEN 3: 0x37
+                    1592             ;                       TOKEN 4: 0x38   
+                    1593             ;IF VALUE IS 0 THEN TOKEN AT HOME
+0A06 7834           1594             MOV R0, #0x34
+                    1595             
+0A08                1596             REPEAT_TOKEN_HOME_G:
+                    1597             
+0A08 B83802         1598             CJNE R0, #0x38, NOT_READ_ALL_TOKEN_G
+                    1599             ;ALL TOKENS READ
+0A0B 800E           1600             SJMP ENDING_G_UPDATE; END ROUTINE CALLED
+                    1601             
+0A0D                1602             NOT_READ_ALL_TOKEN_G:
+0A0D 08             1603             INC R0
+0A0E 8607           1604             MOV 0x07, @R0
+0A10 BF0004         1605             CJNE R7, #0x00, G_NOT_AT_HOME
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE    26
+
+                    1606             ;TOKEN AT HOME
+0A13 D3             1607             SETB C
+0A14 13             1608             RRC A
+0A15 80F1           1609             SJMP REPEAT_TOKEN_HOME_G
+                    1610             
+0A17                1611             G_NOT_AT_HOME:
+0A17 C3             1612             CLR C
+0A18 13             1613             RRC A
+0A19 80ED           1614             SJMP REPEAT_TOKEN_HOME_G
+                    1615     ;---------------------------------------------------------
+                    1616             
+0A1B                1617             ENDING_G_UPDATE:
+0A1B 753008         1618             MOV 0x30, #8
+                    1619             
+0A1E                1620             KEEP_SENDING_G1:
+0A1E 13             1621                     RRC A
+                    1622                     ;SEND THE DATA
+0A1F C2A2           1623                     CLR CLK_G
+0A21 92A0           1624                     MOV DAT,C; SET THE DATA ON THE PIN
+0A23 D2A2           1625                     SETB CLK_G      
+0A25 D530F6         1626                     DJNZ 0x30,KEEP_SENDING_G1
+                    1627             ;DONE SENDING THE DATA
+                    1628             
+                    1629             ;DONE SENDING
+0A28 D2A3           1630             SETB STR; CLEAR STROBE
+0A2A 22             1631             RET
+                    1632             
+                    1633             
+0A2B                1634             NOT_READ_ALL_G:
+0A2B D53013         1635             DJNZ 0x30, CHECK_NEXT0_G
+                    1636             ;SEND THE DATA TO 4094
+0A2E 753008         1637             MOV 0x30, #8; INIT THE POINTER
+0A31 C3             1638             CLR C
+0A32                1639             KEEP_SENDING_G:
+0A32 13             1640                     RRC A
+                    1641                     ;SEND THE DATA
+0A33 C2A2           1642                     CLR CLK_G
+0A35 92A0           1643                     MOV DAT,C; SET THE DATA ON THE PIN
+0A37 D2A2           1644                     SETB CLK_G      
+0A39 D530F6         1645                     DJNZ 0x30,KEEP_SENDING_G
+                    1646             ;DONE SENDING THE DATA
+0A3C 7400           1647             MOV A, #0; CLEAR A REGISTER
+0A3E C3             1648             CLR C; CLEAR CARRY
+0A3F 80BF           1649             SJMP REPEAT_NEXT_BYTE_G
+                    1650             
+0A41                1651             CHECK_NEXT0_G:
+0A41 08             1652             INC R0
+0A42 8607           1653             MOV 0x07, @R0; STORE DATA IN 0x30
+0A44 530702         1654             ANL 0x07, #0x02; MASK OTHER BITS
+0A47 BF0204         1655             CJNE R7, #0x02, NOT_G
+                    1656             ;FOUND A TOKEN
+0A4A D3             1657             SETB C
+0A4B 13             1658             RRC A; ADD THE DATA
+0A4C 80B5           1659             SJMP CHECK_NEXT_G
+                    1660             
+0A4E                1661             NOT_G:
+                    1662             ;NOT RED TOKEN
+0A4E C3             1663             CLR C
+0A4F 13             1664             RRC A; ADD THE DATA
+0A50 80B1           1665             SJMP CHECK_NEXT_G
+0A52 22             1666             RET
+                    1667             
+                    1668     END
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE    27
+
+SYMBOL TABLE LISTING
+------ ----- -------
+
+
+N A M E                       T Y P E  V A L U E   ATTRIBUTES
+
+ADD_A_COMP_TOKEN . . . . . .  C ADDR   0240H   A   
+ADD_TOKEN_TO_PATH_TRUE . . .  C ADDR   01C8H   A   
+ADD_WITHOUT_REMOVE_PLAYER. .  C ADDR   0270H   A   
+CHECK_COMPUTER_WON . . . . .  C ADDR   0470H   A   
+CHECK_COMP_TOKEN_AT_HOME . .  C ADDR   0248H   A   
+CHECK_NEXT0_G. . . . . . . .  C ADDR   0A41H   A   
+CHECK_NEXT0_R. . . . . . . .  C ADDR   09E8H   A   
+CHECK_NEXT_COMP_MOVE . . . .  C ADDR   030CH   A   
+CHECK_NEXT_COMP_MOVE1. . . .  C ADDR   0343H   A   
+CHECK_NEXT_COMP_MOVE2. . . .  C ADDR   037AH   A   
+CHECK_NEXT_COMP_MOVE3. . . .  C ADDR   03AEH   A   
+CHECK_NEXT_COMP_TOKEN. . . .  C ADDR   0669H   A   
+CHECK_NEXT_COMP_TOKEN_ADDING  C ADDR   0242H   A   
+CHECK_NEXT_G . . . . . . . .  C ADDR   0A03H   A   
+CHECK_NEXT_PLAY_TOKEN. . . .  C ADDR   02ADH   A   
+CHECK_NEXT_R . . . . . . . .  C ADDR   09AAH   A   
+CHECK_PLAYER_WON . . . . . .  C ADDR   0450H   A   
+CLEAR_LCD. . . . . . . . . .  C ADDR   0980H   A   
+CLEAR_LCD_MSG. . . . . . . .  C ADDR   0540H   A   
+CLK_G. . . . . . . . . . . .  B ADDR   00A0H.2 A   
+CLK_R. . . . . . . . . . . .  B ADDR   00A0H.1 A   
+COMPUTER_DIE . . . . . . . .  C ADDR   0750H   A   
+COMPUTER_LCD . . . . . . . .  C ADDR   08C0H   A   
+COMPUTER_MOVES_DONE. . . . .  C ADDR   03B1H   A   
+COMPUTER_NOT_WON . . . . . .  C ADDR   03D4H   A   
+COMPUTER_PLAY_NEXT . . . . .  C ADDR   021BH   A   
+COMP_TOKEN_GET_STEP_DONE . .  C ADDR   02A5H   A   
+COMP_TOKEN_INC_F . . . . . .  C ADDR   065BH   A   
+COMP_TOKEN_NOT_AT_START. . .  C ADDR   0256H   A   
+CONT_VALIDITY_CHECK1 . . . .  C ADDR   070FH   A   
+DAT. . . . . . . . . . . . .  B ADDR   00A0H.0 A   
+EA . . . . . . . . . . . . .  B ADDR   00A8H.7 A   
+EN . . . . . . . . . . . . .  B ADDR   00A0H.5 A   
+ENDING_G_UPDATE. . . . . . .  C ADDR   0A1BH   A   
+ENDING_R_UPDATE. . . . . . .  C ADDR   09C2H   A   
+ET1. . . . . . . . . . . . .  B ADDR   00A8H.3 A   
+FORCE_RESET. . . . . . . . .  C ADDR   03E2H   A   
+FOUND_TOKEN_OUTSIDE_HOME . .  C ADDR   0719H   A   
+G_NOT_AT_HOME. . . . . . . .  C ADDR   0A17H   A   
+INVALID_LCD_MSG. . . . . . .  C ADDR   05A0H   A   
+INVALID_PLAYER_LOCATION. . .  C ADDR   067EH   A   
+KEEP_CHECKING_TOKEN_COMP . .  C ADDR   027BH   A   
+KEEP_SENDING_G . . . . . . .  C ADDR   0A32H   A   
+KEEP_SENDING_G1. . . . . . .  C ADDR   0A1EH   A   
+KEEP_SENDING_R . . . . . . .  C ADDR   09D9H   A   
+KEEP_SENDING_R1. . . . . . .  C ADDR   09C5H   A   
+KEY1 . . . . . . . . . . . .  C ADDR   0621H   A   
+KEY2 . . . . . . . . . . . .  C ADDR   0625H   A   
+KEY3 . . . . . . . . . . . .  C ADDR   0629H   A   
+KEY4 . . . . . . . . . . . .  C ADDR   062DH   A   
+LCD_BUSY_CHECK . . . . . . .  C ADDR   0970H   A   
+LCD_CMD_SEND . . . . . . . .  C ADDR   0930H   A   
+LCD_DATA_SEND. . . . . . . .  C ADDR   0950H   A   
+NA_LCD_MSG . . . . . . . . .  C ADDR   05D0H   A   
+NOT_AT_HOME_PLAYER . . . . .  C ADDR   01DCH   A   
+NOT_FOUND_PLAYER_TO_RM . . .  C ADDR   0260H   A   
+NOT_G. . . . . . . . . . . .  C ADDR   0A4EH   A   
+NOT_PREV_COMPUTER. . . . . .  C ADDR   0228H   A   
+NOT_PREV_PLAYER. . . . . . .  C ADDR   01A7H   A   
+NOT_R. . . . . . . . . . . .  C ADDR   09F5H   A   
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE    28
+
+NOT_READ_ALL_G . . . . . . .  C ADDR   0A2BH   A   
+NOT_READ_ALL_R . . . . . . .  C ADDR   09D2H   A   
+NOT_READ_ALL_TOKEN_G . . . .  C ADDR   0A0DH   A   
+NOT_READ_ALL_TOKEN_R . . . .  C ADDR   09B4H   A   
+NOT_RESET. . . . . . . . . .  C ADDR   01A0H   A   
+NOT_YET. . . . . . . . . . .  C ADDR   001FH   A   
+NOT_YET_WON_COUNTED_COMP . .  C ADDR   0474H   A   
+NOT_YET_WON_COUNTED_PLAYER .  C ADDR   0454H   A   
+NO_COMPUTER_TOKEN. . . . . .  C ADDR   067BH   A   
+NO_COMP_PATTERN_FOUND. . . .  C ADDR   02F6H   A   
+NO_COMP_PATTERN_FOUND1 . . .  C ADDR   032DH   A   
+NO_COMP_PATTERN_FOUND2 . . .  C ADDR   0364H   A   
+NO_COMP_PATTERN_FOUND3 . . .  C ADDR   0398H   A   
+NO_PLAYER_TOKEN. . . . . . .  C ADDR   02D0H   A   
+P0 . . . . . . . . . . . . .  D ADDR   0080H   A   
+P1 . . . . . . . . . . . . .  D ADDR   0090H   A   
+P2 . . . . . . . . . . . . .  D ADDR   00A0H   A   
+PLAYER_DIE . . . . . . . . .  C ADDR   0800H   A   
+PLAYER_LCD . . . . . . . . .  C ADDR   0890H   A   
+PLAYER_MOVES_DONE. . . . . .  C ADDR   01FEH   A   
+PLAYER_NOT_WON . . . . . . .  C ADDR   0213H   A   
+PLAYER_PLAY_NEXT . . . . . .  C ADDR   03DCH   A   
+PLAY_TOKEN_INC_F . . . . . .  C ADDR   02A1H   A   
+QUICK_DIE. . . . . . . . . .  C ADDR   0870H   A   
+REP. . . . . . . . . . . . .  C ADDR   0972H   A   
+REP2 . . . . . . . . . . . .  C ADDR   0987H   A   
+REPEAT_DIE_PLAYER. . . . . .  C ADDR   0194H   A   
+REPEAT_NEXT_BYTE_G . . . . .  C ADDR   0A00H   A   
+REPEAT_NEXT_BYTE_R . . . . .  C ADDR   09A7H   A   
+REPEAT_PATH_CLR. . . . . . .  C ADDR   0180H   A   
+REPEAT_TOKEN_CLR . . . . . .  C ADDR   0188H   A   
+REPEAT_TOKEN_HOME_G. . . . .  C ADDR   0A08H   A   
+REPEAT_TOKEN_HOME_R. . . . .  C ADDR   09AFH   A   
+REPEAT_TOKEN_SELECT_PLAYER .  C ADDR   01B4H   A   
+RESET_CLICKED. . . . . . . .  C ADDR   0820H   A   
+RESET_GAME . . . . . . . . .  C ADDR   017BH   A   
+RESET_LCD_MSG. . . . . . . .  C ADDR   049FH   A   
+RESET_TOKEN. . . . . . . . .  C ADDR   060EH   A   
+RS . . . . . . . . . . . . .  B ADDR   00A0H.4 A   
+R_NOT_AT_HOME. . . . . . . .  C ADDR   09BEH   A   
+SKIP_LCD_THINK_MSG . . . . .  C ADDR   03BFH   A   
+START. . . . . . . . . . . .  C ADDR   0100H   A   
+STATE_CHANGED. . . . . . . .  C ADDR   0612H   A   
+STR. . . . . . . . . . . . .  B ADDR   00A0H.3 A   
+TH0. . . . . . . . . . . . .  D ADDR   008CH   A   
+THINK_LCD_MSG. . . . . . . .  C ADDR   0510H   A   
+TIMER1_WAIT. . . . . . . . .  C ADDR   04F0H   A   
+TL0. . . . . . . . . . . . .  D ADDR   008AH   A   
+TMOD . . . . . . . . . . . .  D ADDR   0089H   A   
+TOKEN_COUNTER_NXT. . . . . .  C ADDR   0237H   A   
+TOKEN_GET_STEP_DONE. . . . .  C ADDR   065FH   A   
+TOKEN_MOVE_COMP. . . . . . .  C ADDR   02D5H   A   
+TOKEN_PLACE_PLAYER . . . . .  C ADDR   063CH   A   
+TOKEN_SELECT . . . . . . . .  C ADDR   0600H   A   
+TOKEN_SELECT_COMPUTER. . . .  C ADDR   0235H   A   
+TOKEN_SELECT_OVER. . . . . .  C ADDR   062FH   A   
+TR0. . . . . . . . . . . . .  B ADDR   0088H.4 A   
+TR1. . . . . . . . . . . . .  B ADDR   0088H.6 A   
+UPDATE_GREEN_RGB . . . . . .  C ADDR   09F9H   A   
+UPDATE_RED_RGB . . . . . . .  C ADDR   09A0H   A   
+VALIDITY_CHECK . . . . . . .  C ADDR   0700H   A   
+VALIDITY_CHECK1_CONT . . . .  C ADDR   0702H   A   
+VALID_NEW_LOCATION_PLAYER. .  C ADDR   064EH   A   
+VALID_NEW_LOCATION_PLAYER0 .  C ADDR   0646H   A   
+VALID_TRUE . . . . . . . . .  C ADDR   072CH   A   
+WAIT_FOR_KEY_RELEASE . . . .  C ADDR   0632H   A   
+A51 MACRO ASSEMBLER  MAIN                                                                 11/10/2024 08:10:55 PAGE    29
+
+WAIT_FOR_PLAYER_RELEASE. . .  C ADDR   0819H   A   
+WAIT_FOR_PLAYER_ROLL . . . .  C ADDR   0802H   A   
+WAIT_FOR_RESET . . . . . . .  C ADDR   03DFH   A   
+WAIT_FOR_STATE_CHANGE. . . .  C ADDR   0603H   A   
+WAIT_FOR_TIMER1. . . . . . .  C ADDR   04F4H   A   
+WAIT_FOR_TIMER2. . . . . . .  C ADDR   0756H   A   
+WC_LCD_MSG . . . . . . . . .  C ADDR   0570H   A   
+WON_LCD_MSG. . . . . . . . .  C ADDR   048AH   A   
+
+
+REGISTER BANK(S) USED: 0 
+
+
+ASSEMBLY COMPLETE.  0 WARNING(S), 0 ERROR(S)

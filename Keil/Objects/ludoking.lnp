@@ -1,0 +1,3 @@
+".\Objects\main.obj" 
+TO ".\Objects\ludoking" 
+PRINT(".\Listings\ludoking.m51")
